@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'services/auth_service.dart';
+import 'models/auth_response.dart';
 
 void main() {
   runApp(const MyApp());
@@ -10,7 +12,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Voice Chat',
+      title: 'Cove',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -86,39 +88,50 @@ class _AuthScreenState extends State<AuthScreen> {
 
   // 4. Обработка отправки
   Future<void> _handleSubmit() async {
-    // Проверяем валидность всех полей
-    if (_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _statusMessage = null;
+      _isSuccess = false;
+    });
+
+    try {
+      final authService = AuthService();
+      AuthResponse response;
+
+      if (_isLogin) {
+        response = await authService.login(
+          _usernameController.text,
+          _passwordController.text,
+        );
+        _statusMessage = '✅ Вход выполнен! Токен: ${response.token.substring(0, 10)}...';
+      } else {
+        response = await authService.register(
+          _usernameController.text,
+          _passwordController.text,
+        );
+        _statusMessage = '✅ Регистрация успешна! Теперь войдите.';
+        _isLogin = true;
+        _formKey.currentState!.reset();
+        _usernameController.clear();
+        _passwordController.clear();
+        _confirmPasswordController.clear();
+      }
+      
+      _isSuccess = true;
+      // TODO: Здесь сохраним токен в secure storage и перейдём в чат
+      print('🔑 Токен сохранён (пока в консоли): ${response.token}');
+      
+    } catch (e) {
       setState(() {
-        _isLoading = true;
-        _statusMessage = null;
+        _statusMessage = '❌ ${e.toString().replaceFirst('Exception: ', '')}';
         _isSuccess = false;
       });
-
-      // Имитация запроса к серверу (2 секунды)
-      await Future.delayed(const Duration(seconds: 2));
-
+    } finally {
       setState(() {
         _isLoading = false;
-        
-        // Логика переключения после регистрации
-        if (!_isLogin) {
-          _statusMessage = '✅ Регистрация успешна! Теперь войдите.';
-          _isSuccess = true;
-          _isLogin = true; // <-- Переключаем на форму входа
-          _formKey.currentState!.reset(); // Очищаем форму
-          _usernameController.clear();
-          _passwordController.clear();
-          _confirmPasswordController.clear();
-        } else {
-          // Логика для входа
-          _statusMessage = '✅ Вход выполнен! Переход в чат...';
-          _isSuccess = true;
-          // Тут позже будет переход на главный экран:
-          // Navigator.pushReplacement(..., MaterialPageRoute(builder: (context) => MainScreen()));
-        }
       });
-      
-      print(' Данные отправлены: user=${_usernameController.text}');
     }
   }
 
