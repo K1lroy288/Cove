@@ -1,0 +1,40 @@
+services:
+  postgres-cove:
+    image: postgres:17
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=cove_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - cove_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  cove:
+    image: cove:latest
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile
+    env_file:
+      - ../.env
+    ports:
+      - "3425:3425"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      postgres-cove:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cove_data:

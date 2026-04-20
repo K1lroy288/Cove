@@ -48,6 +48,8 @@ func main() {
 	auth := r.Group("/auth")
 	{
 		auth.GET("/login", handler.Login)
+
+		auth.POST("/register", handler.CreateUser)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
