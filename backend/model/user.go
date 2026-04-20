@@ -1,0 +1,14 @@
+package model
+
+import (
+	"gorm.io/datatypes"
+	"gorm.io/gorm"
+)
+
+type User struct {
+	gorm.Model
+	ID           uint           `gorm:"primary key; not null"`
+	Username     string         `gorm:"size:100;not null;unique"`
+	PasswordHash []byte         `gorm:"not null"`
+	Settings     datatypes.JSON `gorm:"types:jsonb"`
+}
