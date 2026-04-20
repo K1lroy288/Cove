@@ -12,6 +12,9 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
+//go:embed migration/*.sql
+var MigrationsFS embed.FS
+
 type Migrator struct {
 	srcDriver source.Driver
 }

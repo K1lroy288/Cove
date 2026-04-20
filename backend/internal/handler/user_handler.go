@@ -4,22 +4,24 @@ import (
 	dto "cove/internal/DTO"
 	"cove/internal/service"
 	"cove/internal/utils"
+	"errors"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type AuthHandler struct {
+type UserHandler struct {
 	service *service.UserService
 }
 
-func NewAuthHandler(s *service.UserService) *AuthHandler {
-	return &AuthHandler{service: s}
+func NewUserHandler(s *service.UserService) *UserHandler {
+	return &UserHandler{service: s}
 }
 
-func (h *AuthHandler) Login(ctx *gin.Context) {
+func (h *UserHandler) Login(ctx *gin.Context) {
 	var req dto.User
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		log.Printf("Invalid JSON at login request: %v", err)
@@ -49,4 +51,29 @@ func (h *AuthHandler) Login(ctx *gin.Context) {
 
 	response := map[string]string{"token": token}
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (h *UserHandler) CreateUser(ctx *gin.Context) {
+	var req dto.User
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		log.Printf("Invalid JSON at register request: %v", err)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON at register request"})
+		return
+	}
+
+	err := h.service.CreateUser(req)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			log.Printf("Duplicate username: %v", err)
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Username already exists"})
+			return
+		}
+
+		log.Printf("create user error: %v", err)
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	ctx.Status(http.StatusCreated)
 }

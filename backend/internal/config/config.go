@@ -8,9 +8,17 @@ import (
 )
 
 type Config struct {
-	AppHost   string
-	AppPort   string
+	Port      string
 	JwtSecret string
+	DB        DBConfig
+}
+
+type DBConfig struct {
+	Host     string
+	User     string
+	Password string
+	Name     string
+	Port     string
 }
 
 var (
@@ -18,22 +26,28 @@ var (
 	once     sync.Once
 )
 
-func loadConfig() *Config {
-	once.Do(func() {
-		instance = &Config{
-			AppHost:   os.Getenv("APP_HOST"),
-			AppPort:   os.Getenv("APP_PORT"),
-			JwtSecret: os.Getenv("JWT_SECRET"),
-		}
-	})
-
-	return instance
-}
-
 func GetConfig() *Config {
 	if instance == nil {
 		return loadConfig()
 	}
+
+	return instance
+}
+
+func loadConfig() *Config {
+	once.Do(func() {
+		instance = &Config{
+			Port:      os.Getenv("APP_PORT"),
+			JwtSecret: os.Getenv("JWT_SECRET"),
+			DB: DBConfig{
+				Host:     os.Getenv("DB_HOST"),
+				User:     os.Getenv("DB_USER"),
+				Password: os.Getenv("DB_PASSWORD"),
+				Name:     os.Getenv("DB_NAME"),
+				Port:     os.Getenv("DB_PORT"),
+			},
+		}
+	})
 
 	return instance
 }
