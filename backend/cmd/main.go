@@ -47,7 +47,7 @@ func main() {
 
 	auth := r.Group("/auth")
 	{
-		auth.GET("/login", handler.Login)
+		auth.POST("/login", handler.Login)
 
 		auth.POST("/register", handler.CreateUser)
 	}

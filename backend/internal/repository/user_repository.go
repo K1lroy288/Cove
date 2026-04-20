@@ -21,7 +21,7 @@ func (r *UserRepository) CreateUser(user *model.User) error {
 
 func (r *UserRepository) GetUserByUsername(username string) (model.User, error) {
 	var user model.User
-	err := r.DB.Where("username = ?", username).Preload("Roles").First(&user).Error
+	err := r.DB.Where("username = ?", username).First(&user).Error
 	return user, err
 }
 
