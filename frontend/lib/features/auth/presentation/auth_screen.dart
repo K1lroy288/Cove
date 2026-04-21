@@ -30,12 +30,24 @@ class _AuthScreenState extends State<AuthScreen> {
     if (value == null || value.isEmpty) {
       return 'Введите имя пользователя';
     }
-    if (value.length < 3) {
+    
+    // Убираем пробелы по краям для проверки
+    final trimmed = value.trim();
+    
+    if (trimmed.length < 3) {
       return 'Минимум 3 символа';
     }
-    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value)) {
-      return 'Только латиница, цифры и _';
+    
+    if (trimmed.length > 32) {
+      return 'Максимум 32 символа';
     }
+    
+    // ✅ Разрешаем: латиница, кириллица, цифры, _, -, .
+    // ❌ Блокируем: спецсимволы, пробелы внутри, опасные паттерны
+    if (!RegExp(r'^[a-zA-Zа-яА-ЯёЁ0-9_\-.]+$').hasMatch(trimmed)) {
+      return 'Разрешены только буквы, цифры, _, - и .';
+    }
+    
     return null;
   }
 
