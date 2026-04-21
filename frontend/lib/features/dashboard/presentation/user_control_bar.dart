@@ -1,14 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../shared/services/auth_notifier.dart';
+import '../../auth/presentation/auth_screen.dart'; // ← Импорт экрана входа
 
 class UserControlBar extends StatelessWidget {
   const UserControlBar({super.key});
 
+  // 🔥 Выносим логику выхода в отдельный метод для чистоты кода
+  void _handleLogout(BuildContext context, AuthNotifier auth) async {
+    // 1. Очищаем состояние (в памяти + позже в хранилище)
+    await auth.logout();
+    
+    // 2. Перенаправляем на экран входа и удаляем всю историю навигации
+    // pushAndRemoveUntil удаляет все предыдущие экраны из стека
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const AuthScreen()),
+        (route) => false, // false = удалить ВСЕ предыдущие маршруты
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // 🔥 Consumer — виджет-слушатель.
-    // Он автоматически перестраивается, когда в AuthNotifier меняется состояние.
     return Consumer<AuthNotifier>(
       builder: (context, auth, child) {
         return Container(
@@ -30,8 +44,6 @@ class UserControlBar extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 🔥 Здесь берем username из auth (наш AuthNotifier)
-                  // Если null — показываем "Загрузка..."
                   Text(
                     auth.username ?? 'Пользователь', 
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -49,10 +61,11 @@ class UserControlBar extends StatelessWidget {
               IconButton(icon: const Icon(Icons.mic), onPressed: () {}),
               IconButton(icon: const Icon(Icons.headphones), onPressed: () {}),
               IconButton(icon: const Icon(Icons.settings), onPressed: () {}),
-              // Кнопка выхода для теста
+              
+              // 🔥 Кнопка выхода с правильной навигацией
               IconButton(
                 icon: const Icon(Icons.logout, size: 20), 
-                onPressed: () => auth.logout(),
+                onPressed: () => _handleLogout(context, auth),
                 tooltip: 'Выйти',
               ),
             ],

@@ -18,11 +18,17 @@ class AuthNotifier extends ChangeNotifier {
     notifyListeners(); // 🔥 Уведомляем все виджеты, которые слушают этот класс
   }
 
-  // Метод для выхода из аккаунта
-  void logout() {
+  // 🔥 Обновлённый logout: очищает состояние и готов к расширению
+  Future<void> logout() async {
+    // 1. Очищаем память
     _username = null;
     _token = null;
     _isAuthenticated = false;
+    
+    // 2. TODO: Здесь позже добавим очистку безопасного хранилища:
+    // final storage = FlutterSecureStorage();
+    // await storage.delete(key: 'auth_token');
+    
     notifyListeners();
   }
 }
