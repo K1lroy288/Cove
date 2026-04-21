@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // ← Импортируем provider
 import 'shared/theme/app_theme.dart';
+import 'shared/services/auth_notifier.dart'; // ← Импортируем наш нотифаер
 import 'features/auth/presentation/auth_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    // Оборачиваем приложение в ChangeNotifierProvider
+    ChangeNotifierProvider(
+      create: (context) => AuthNotifier(), // Создаём экземпляр
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {

@@ -25,27 +25,27 @@ func (h *UserHandler) Login(ctx *gin.Context) {
 	var req dto.User
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		log.Printf("Invalid JSON at login request: %v", err)
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
 		return
 	}
 
 	user, err := h.service.GetUserByUsername(req.Username)
 	if err != nil {
 		log.Printf("Invalid username or password: %v", err)
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Неверное имя пользователя или пароль"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword(user.PasswordHash, []byte(req.Password)); err != nil {
 		log.Printf("Invalid username or password: %v", err)
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid username or password"})
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Неверное имя пользователя или пароль"})
 		return
 	}
 
 	token, err := utils.GenerateJWT(user)
 	if err != nil {
 		log.Printf("JWT generation failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Authentication failed"})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка аутентификации. Попробуйте позже"})
 		return
 	}
 
@@ -61,7 +61,7 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 	var req dto.User
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		log.Printf("Invalid JSON at register request: %v", err)
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON at register request"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			log.Printf("Duplicate username: %v", err)
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "Username already exists"})
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Пользователь с таким именем уже существует"})
 			return
 		}
 

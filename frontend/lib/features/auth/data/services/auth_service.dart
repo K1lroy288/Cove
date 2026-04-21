@@ -3,9 +3,9 @@ import 'dart:convert';
 import '../models/auth_response.dart';
 
 class AuthService {
-  // В продакшене выноси в .env или конфиг!
   final String baseUrl = 'http://localhost:3425';
 
+  // 🔐 Логин: ожидаем тело с токеном
   Future<AuthResponse> login(String username, String password) async {
     final uri = Uri.parse('$baseUrl/auth/login');
     
@@ -18,17 +18,22 @@ class AuthService {
       }),
     );
 
+    // ✅ Ранний возврат при успехе
     if (response.statusCode == 200) {
+      if (response.body.isEmpty) {
+        throw Exception('Пустой ответ от сервера');
+      }
       final Map<String, dynamic> data = jsonDecode(response.body);
       return AuthResponse.fromJson(data);
-    } else {
-      // Сервер вернул ошибку (401, 400, 500 и т.д.)
-      final errorBody = jsonDecode(response.body);
-      throw Exception(errorBody['message'] ?? 'Ошибка авторизации');
     }
+
+    // ✅ Если не 200 — выбрасываем ошибку и завершаем
+    _handleError(response);
+
   }
 
-  Future<AuthResponse> register(String username, String password) async {
+  // ✍️ Регистрация: тело ответа опционально
+  Future<void> register(String username, String password) async {
     final uri = Uri.parse('$baseUrl/auth/register');
     
     final response = await http.post(
@@ -40,12 +45,28 @@ class AuthService {
       }),
     );
 
-    if (response.statusCode == 201) { // 201 Created для регистрации
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      return AuthResponse.fromJson(data);
-    } else {
-      final errorBody = jsonDecode(response.body);
-      throw Exception(errorBody['message'] ?? 'Ошибка регистрации');
+    // ✅ Ранний возврат при успехе
+    if (response.statusCode == 201) {
+      return;
     }
+
+    // ✅ Если не 201 — выбрасываем ошибку
+    _handleError(response);
+  }
+
+  // 🛡 Универсальная обработка ошибок (всегда бросает исключение!)
+  Never _handleError(http.Response response) {
+    String message = 'Ошибка сервера';
+    
+    if (response.body.isNotEmpty) {
+      try {
+        final errorBody = jsonDecode(response.body);
+        message = errorBody['message'] ?? errorBody['error'] ?? message;
+      } catch (_) {
+        message = response.body;
+      }
+    }
+    
+    throw Exception(message);
   }
 }

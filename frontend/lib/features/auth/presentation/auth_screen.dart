@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../data/services/auth_service.dart';
-import '../data/models/auth_response.dart';
 import '../../dashboard/presentation/main_dashboard_screen.dart';
+import '../../../shared/services/auth_notifier.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -62,76 +63,70 @@ class _AuthScreenState extends State<AuthScreen> {
 
   // 🚀 Обработка отправки формы
   Future<void> _handleSubmit() async {
-    // 1. Проверка валидации
-    if (!_formKey.currentState!.validate()) {
-      return;
+  if (!_formKey.currentState!.validate()) return;
+
+  setState(() {
+    _isLoading = true;
+    _statusMessage = null;
+    _isSuccess = false;
+  });
+
+  try {
+    final authService = AuthService();
+
+    if (_isLogin) {
+      // === ЛОГИН ===
+      final response = await authService.login(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
+
+      // 🔥 1. Сохраняем данные в глобальное состояние
+      // Получаем экземпляр AuthNotifier через context и вызываем login()
+      Provider.of<AuthNotifier>(context, listen: false).login(
+        response.username, 
+        response.token
+      );
+
+      // 2. Переходим на дашборд
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MainDashboardScreen()),
+        );
+      }
+    } else {
+      // === РЕГИСТРАЦИЯ ===
+      // Важно: register() возвращает void, поэтому НЕ присваиваем результат
+      await authService.register(
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
+      if (mounted) {
+        setState(() {
+          _statusMessage = '✅ Аккаунт создан! Теперь войдите.';
+          _isSuccess = true;
+          _isLogin = true;
+          _formKey.currentState?.reset();
+          _usernameController.clear();
+          _passwordController.clear();
+          _confirmPasswordController.clear();
+        });
+      }
     }
-
-    // 2. Показываем индикатор загрузки
-    setState(() {
-      _isLoading = true;
-      _statusMessage = null;
-      _isSuccess = false;
-    });
-
-    try {
-      final authService = AuthService();
-      AuthResponse response;
-
-      if (_isLogin) {
-        // === ЛОГИН ===
-        response = await authService.login(
-          _usernameController.text.trim(),
-          _passwordController.text,
-        );
-        
-        // Сохраняем токен и переходим на главный экран
-        _saveToken(response.token);
-        
-        // Проверка mounted предотвращает ошибку, если виджет уже удалён
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainDashboardScreen()),
-          );
-        }
-      } else {
-        // === РЕГИСТРАЦИЯ ===
-        response = await authService.register(
-          _usernameController.text.trim(),
-          _passwordController.text,
-        );
-        
-        // После регистрации переключаем на форму входа
-        if (mounted) {
-          setState(() {
-            _statusMessage = '✅ Аккаунт создан! Теперь войдите.';
-            _isSuccess = true;
-            _isLogin = true;
-            _formKey.currentState?.reset();
-            _usernameController.clear();
-            _passwordController.clear();
-            _confirmPasswordController.clear();
-          });
-        }
-      }
-    } catch (e) {
-      // Обработка ошибок сети или сервера
-      if (mounted) {
-        setState(() {
-          _statusMessage = '❌ ${e.toString().replaceFirst('Exception: ', '')}';
-          _isSuccess = false;
-        });
-      }
-    } finally {
-      // Скрываем индикатор загрузки (только если виджет ещё в дереве)
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+  } catch (e) {
+    if (mounted) {
+      setState(() {
+        _statusMessage = '❌ ${e.toString().replaceFirst('Exception: ', '')}';
+        _isSuccess = false;
+      });
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
+}
 
   // 💾 Сохранение токена (заглушка)
   void _saveToken(String token) {
