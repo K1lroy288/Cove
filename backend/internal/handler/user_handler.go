@@ -49,7 +49,11 @@ func (h *UserHandler) Login(ctx *gin.Context) {
 		return
 	}
 
-	response := map[string]string{"token": token}
+	response := gin.H{
+		"token":    token,
+		"userId":   "usr_123",
+		"username": req.Username,
+	}
 	ctx.JSON(http.StatusOK, response)
 }
 
