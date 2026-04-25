@@ -11,4 +11,6 @@ type User struct {
 	Username     string         `gorm:"size:100;not null;unique"`
 	PasswordHash []byte         `gorm:"not null"`
 	Settings     datatypes.JSON `gorm:"types:jsonb"`
+
+	Friends []User `gorm:"many2many:friendships;joinForeignKey:UserID;JoinReferences:FriendID"`
 }
