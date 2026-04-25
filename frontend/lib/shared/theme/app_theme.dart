@@ -1,30 +1,26 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static ThemeData get darkTheme => ThemeData(
-    brightness: Brightness.dark,
-    primaryColor: const Color(0xFF5865F2),
-    scaffoldBackgroundColor: const Color(0xFF36393F),
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: const Color(0xFF5865F2),
+  // Твои цвета
+  static const Color darkBg = Color(0xFF12121A);
+  static const Color surface = Color(0xFF1E1E26);
+  static const Color accentIndigo = Color(0xFF6366F1);
+
+  static ThemeData get darkTheme {
+    return ThemeData(
       brightness: Brightness.dark,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: const Color(0xFF202225),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2)),
-      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.redAccent, width: 1)),
-      focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Colors.redAccent, width: 2)),
-    ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF5865F2),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      scaffoldBackgroundColor: darkBg,
+      primaryColor: accentIndigo,
+      colorScheme: const ColorScheme.dark(
+        surface: surface,
+        primary: accentIndigo,
+        onSurface: Colors.white,
       ),
-    ),
-  );
+      appBarTheme: const AppBarTheme(
+        backgroundColor: darkBg,
+        elevation: 0,
+      ),
+      dividerTheme: const DividerThemeData(color: Colors.white10),
+    );
+  }
 }

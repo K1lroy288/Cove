@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // ← Импортируем provider
+import 'package:provider/provider.dart';
+
+// Твои существующие импорты
 import 'shared/theme/app_theme.dart';
-import 'shared/services/auth_notifier.dart'; // ← Импортируем наш нотифаер
+import 'shared/services/auth_notifier.dart';
 import 'features/auth/presentation/auth_screen.dart';
+
+// Новый импорт для главного экрана
+import 'screens/main_screen.dart';
 
 void main() {
   runApp(
-    // Оборачиваем приложение в ChangeNotifierProvider
     ChangeNotifierProvider(
-      create: (context) => AuthNotifier(), // Создаём экземпляр
+      create: (context) => AuthNotifier(),
       child: const MyApp(),
     ),
   );
@@ -22,8 +26,22 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Cove',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const AuthScreen(),
+      // Используем твою общую тему из shared/theme/app_theme.dart
+      theme: AppTheme.darkTheme, 
+      
+      // Используем Consumer, чтобы автоматически переключать экраны,
+      // когда AuthNotifier вызовет notifyListeners()
+      home: Consumer<AuthNotifier>(
+        builder: (context, auth, _) {
+          // Если пользователь авторизован — показываем новый адаптивный MainScreen
+          // Если нет — отправляем на AuthScreen
+          if (auth.isAuthenticated) {
+            return const MainScreen();
+          } else {
+            return const AuthScreen();
+          }
+        },
+      ),
     );
   }
 }

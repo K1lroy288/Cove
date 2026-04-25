@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/services/auth_service.dart';
-import '../../dashboard/presentation/main_dashboard_screen.dart';
 import '../../../shared/services/auth_notifier.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -75,70 +74,66 @@ class _AuthScreenState extends State<AuthScreen> {
 
   // 🚀 Обработка отправки формы
   Future<void> _handleSubmit() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() {
-    _isLoading = true;
-    _statusMessage = null;
-    _isSuccess = false;
-  });
+    setState(() {
+      _isLoading = true;
+      _statusMessage = null;
+      _isSuccess = false;
+    });
 
-  try {
-    final authService = AuthService();
+    try {
+      final authService = AuthService();
 
-    if (_isLogin) {
-      // === ЛОГИН ===
-      final response = await authService.login(
-        _usernameController.text.trim(),
-        _passwordController.text,
-      );
-
-      // 🔥 1. Сохраняем данные в глобальное состояние
-      // Получаем экземпляр AuthNotifier через context и вызываем login()
-      Provider.of<AuthNotifier>(context, listen: false).login(
-        response.username, 
-        response.token
-      );
-
-      // 2. Переходим на дашборд
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainDashboardScreen()),
+      if (_isLogin) {
+        // === ЛОГИН ===
+        final response = await authService.login(
+          _usernameController.text.trim(),
+          _passwordController.text,
         );
+
+        // 🔥 ВАЖНО: Просто вызываем метод в нотифаере. 
+        // Consumer в main.dart увидит изменение и САМ переключит экран на MainScreen.
+        if (mounted) {
+          Provider.of<AuthNotifier>(context, listen: false).login(
+            response.username, 
+            response.token
+          );
+        }
+        
+        // Navigator здесь БОЛЬШЕ НЕ НУЖЕН. Удали старый блок pushReplacement.
+        
+      } else {
+        // === РЕГИСТРАЦИЯ ===
+        await authService.register(
+          _usernameController.text.trim(),
+          _passwordController.text,
+        );
+        if (mounted) {
+          setState(() {
+            _statusMessage = '✅ Аккаунт создан! Теперь войдите.';
+            _isSuccess = true;
+            _isLogin = true;
+            _formKey.currentState?.reset();
+            _usernameController.clear();
+            _passwordController.clear();
+            _confirmPasswordController.clear();
+          });
+        }
       }
-    } else {
-      // === РЕГИСТРАЦИЯ ===
-      // Важно: register() возвращает void, поэтому НЕ присваиваем результат
-      await authService.register(
-        _usernameController.text.trim(),
-        _passwordController.text,
-      );
+    } catch (e) {
       if (mounted) {
         setState(() {
-          _statusMessage = '✅ Аккаунт создан! Теперь войдите.';
-          _isSuccess = true;
-          _isLogin = true;
-          _formKey.currentState?.reset();
-          _usernameController.clear();
-          _passwordController.clear();
-          _confirmPasswordController.clear();
+          _statusMessage = '❌ ${e.toString().replaceFirst('Exception: ', '')}';
+          _isSuccess = false;
         });
       }
-    }
-  } catch (e) {
-    if (mounted) {
-      setState(() {
-        _statusMessage = '❌ ${e.toString().replaceFirst('Exception: ', '')}';
-        _isSuccess = false;
-      });
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-}
 
   // 💾 Сохранение токена (заглушка)
   void _saveToken(String token) {
