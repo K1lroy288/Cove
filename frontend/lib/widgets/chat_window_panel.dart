@@ -21,18 +21,7 @@ class ChatWindowPanel extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: const EdgeInsets.all(20),
-              children: [
-                _buildMessage("Привет! Как продвигается разработка Cove?", false, "11:00"),
-                _buildMessage("Почти закончил с интерфейсом, перехожу к Go.", true, "11:05"),
-                
-                // Вложенный тред (уникальная фишка)
-                _buildThreadWrapper([
-                  _buildMessage("Не забудь про PostgreSQL 17!", false, "11:06"),
-                  _buildVoiceReaction("Ок, сделаю!", true),
-                ]),
-                
-                _buildMessage("Кстати, голосовые реакции работают отлично.", false, "11:10"),
-              ],
+              children: [],
             ),
           ),
 

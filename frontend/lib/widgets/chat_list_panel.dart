@@ -9,11 +9,7 @@ class ChatListPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // В будущем этот список будет приходить из БД
-    final List<Map<String, String>> demoChats = [
-      {"id": "1", "name": "Alexander", "lastMsg": "Голосовая реакция 🔥", "time": "12:45"},
-      {"id": "2", "name": "Cove Team", "lastMsg": "Вложенная ветка обновлена", "time": "10:20"},
-      {"id": "3", "name": "Design Chat", "lastMsg": "Скинь фигму проекта", "time": "Вчера"},
-    ];
+    final List<Map<String, String>> demoChats = [];
 
     return Container(
       color: AppTheme.darkBg,

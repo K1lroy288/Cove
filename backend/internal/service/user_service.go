@@ -4,9 +4,12 @@ import (
 	dto "cove/internal/DTO"
 	"cove/internal/model"
 	"cove/internal/repository"
+	"errors"
+	"log"
 	"strconv"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type UserService struct {
@@ -74,6 +77,25 @@ func (s *UserService) UpdateUser(userDTO dto.User) error {
 	err = s.repo.UpdateUser(user)
 	return err
 } */
+
+func (s *UserService) GetUserByID(id uint) (*dto.User, error) {
+	user, err := s.repo.GetUserById(id)
+	if err != nil {
+		// Если GORM не нашел запись
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("user not found")
+		}
+		log.Printf("error get user %d: %v", id, err)
+		return nil, err
+	}
+
+	userDTO := &dto.User{
+		ID:       user.ID,
+		Username: user.Username,
+	}
+
+	return userDTO, nil
+}
 
 func (s *UserService) GetUsers() ([]dto.User, error) {
 	users, err := s.repo.GetUsers()

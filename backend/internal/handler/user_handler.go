@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -80,4 +81,28 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusCreated)
+}
+
+func (h *UserHandler) FindUserByID(ctx *gin.Context) {
+	id := ctx.Param("id")
+
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		log.Printf("wrong id format: %v", err)
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
+		return
+	}
+
+	user, err := h.service.GetUserByID(uint(idUint))
+	if err != nil {
+		if err.Error() == "user not found" {
+			ctx.JSON(http.StatusNotFound, gin.H{"message": "Пользователь не найден"})
+			return
+		}
+
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
 }

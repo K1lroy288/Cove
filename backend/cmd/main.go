@@ -52,6 +52,11 @@ func main() {
 		auth.POST("/register", handler.CreateUser)
 	}
 
+	user := r.Group("/user")
+	{
+		user.GET("/:id")
+	}
+
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	r.Run(addr)
 }
