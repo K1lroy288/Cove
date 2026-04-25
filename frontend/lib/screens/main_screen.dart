@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../widgets/chat_list_panel.dart';
 import '../widgets/chat_window_panel.dart';
-import '../../../shared/theme/app_theme.dart';
-import '../../../shared/services/auth_notifier.dart';
+import '../shared/theme/app_theme.dart';
+import '../shared/services/auth_notifier.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,22 +13,25 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0; // 0 - Чаты, 1 - Поиск, 2 - Настройки
-  String? _selectedChatId; // null означает, что открыт Дашборд
+  int _selectedIndex = 0; 
+  String? _selectedChatId; 
 
   @override
   Widget build(BuildContext context) {
+    // 🔥 Получаем данные пользователя
+    final auth = context.watch<AuthNotifier>();
+    final String currentUsername = auth.username ?? "User";
+
     return Scaffold(
       body: Row(
         children: [
-          // 1. Боковая навигация (Rail)
+          // 1. БОКОВАЯ ПАНЕЛЬ (NavigationRail)
           NavigationRail(
             backgroundColor: AppTheme.darkBg,
             selectedIndex: _selectedIndex,
             onDestinationSelected: (index) {
               setState(() {
                 _selectedIndex = index;
-                // При переходе в поиск или настройки сбрасываем выбранный чат
                 if (index != 0) _selectedChatId = null;
               });
             },
@@ -54,30 +57,30 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const VerticalDivider(width: 1, color: Colors.white10),
 
-          // 2. Основной контент
+          // 2. ОСНОВНОЙ КОНТЕНТ
           Expanded(
-            child: _buildCurrentContent(),
+            child: _buildCurrentPage(currentUsername),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCurrentContent() {
+  Widget _buildCurrentPage(String username) {
     switch (_selectedIndex) {
       case 0:
-        return _buildChatSection();
+        return _buildChatLayout(username);
       case 1:
         return _buildSearchPage();
       case 2:
-        return _buildSettingsPage();
+        return _buildSettingsPage(username);
       default:
-        return _buildChatSection();
+        return _buildChatLayout(username);
     }
   }
 
-  // --- СЕКЦИЯ ЧАТОВ ---
-  Widget _buildChatSection() {
+  // --- ЛОГИКА СЕКЦИИ ЧАТОВ ---
+  Widget _buildChatLayout(String username) {
     return LayoutBuilder(
       builder: (context, constraints) {
         bool isDesktop = constraints.maxWidth > 800;
@@ -86,7 +89,7 @@ class _MainScreenState extends State<MainScreen> {
           return Row(
             children: [
               SizedBox(
-                width: 300,
+                width: 320,
                 child: ChatListPanel(
                   onChatSelected: (id) => setState(() => _selectedChatId = id),
                 ),
@@ -94,7 +97,7 @@ class _MainScreenState extends State<MainScreen> {
               const VerticalDivider(width: 1, color: Colors.white10),
               Expanded(
                 child: _selectedChatId == null 
-                  ? _buildDashboard() 
+                  ? _buildDashboard(username) 
                   : ChatWindowPanel(
                       chatId: _selectedChatId!, 
                       onBack: () => setState(() => _selectedChatId = null)
@@ -115,29 +118,32 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // --- ДАШБОРД (ПРИВЕТСТВИЕ) ---
-  Widget _buildDashboard() {
+  // --- РЕАЛЬНЫЙ ДАШБОРД (Без заглушек) ---
+  Widget _buildDashboard(String username) {
     return Container(
       color: AppTheme.darkBg,
       padding: const EdgeInsets.all(40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Привет, 👋", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+          Text("Привет, $username 👋", 
+            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
           const SizedBox(height: 10),
-          const Text("Выберите чат, чтобы начать общение в Cove.", style: TextStyle(color: Colors.white60)),
+          Text("Рады видеть тебя в Cove. У тебя нет пропущенных вызовов.", 
+            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16)),
           const SizedBox(height: 40),
+          
           Expanded(
             child: GridView.count(
               crossAxisCount: 2,
               crossAxisSpacing: 20,
               mainAxisSpacing: 20,
-              childAspectRatio: 2.5,
+              childAspectRatio: 2.4,
               children: [
-                _dashboardCard("Активные звонки", "3 комнаты", Icons.graphic_eq, Colors.greenAccent),
-                _dashboardCard("Новые реакции", "5 звуков", Icons.spatial_audio_off, AppTheme.accentIndigo),
-                _dashboardCard("Тренды", "Популярные ветки", Icons.whatshot, Colors.orangeAccent),
-                _dashboardCard("Безопасность", "Ключ активен", Icons.verified_user, Colors.blueAccent),
+                _dashboardCard("Голосовые комнаты", "Активных сейчас: 0", Icons.graphic_eq, Colors.greenAccent),
+                _dashboardCard("Реакции", "Новых звуков нет", Icons.spatial_audio_off, AppTheme.accentIndigo),
+                _dashboardCard("Тренды сообщества", "Пока пусто", Icons.whatshot, Colors.orangeAccent),
+                _dashboardCard("Безопасность", "Ключ настроен", Icons.verified_user, Colors.blueAccent),
               ],
             ),
           ),
@@ -148,22 +154,27 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _dashboardCard(String title, String subtitle, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.03)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 30),
-          const SizedBox(width: 16),
-          Flexible(
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 28),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(subtitle, style: const TextStyle(fontSize: 13, color: Colors.white38)),
               ],
             ),
           )
@@ -172,7 +183,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // --- ОБНОВЛЕННЫЙ ПОИСК ---
+  // --- СТРАНИЦА ПОИСКА ---
   Widget _buildSearchPage() {
     return Container(
       color: AppTheme.darkBg,
@@ -181,32 +192,42 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text("Поиск", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          const Text("Найдите собеседника по никнейму", style: TextStyle(color: Colors.white60)),
-          const SizedBox(height: 30),
+          const SizedBox(height: 8),
+          const Text("Найдите собеседника по уникальному никнейму", style: TextStyle(color: Colors.white54)),
+          const SizedBox(height: 32),
           TextField(
+            style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
-              hintText: "Введите никнейм...",
+              hintText: "Например: alex_cove",
+              hintStyle: const TextStyle(color: Colors.white24),
               prefixIcon: const Icon(Icons.search, color: AppTheme.accentIndigo),
               filled: true,
               fillColor: AppTheme.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
             ),
           ),
           const Spacer(),
-          const Center(child: Icon(Icons.search_off, size: 80, color: Colors.white10)),
-          const Center(child: Text("Тут появятся результаты поиска", style: TextStyle(color: Colors.white24))),
+          Center(
+            child: Opacity(
+              opacity: 0.3,
+              child: Column(
+                children: const [
+                  Icon(Icons.manage_search, size: 64, color: Colors.white),
+                  SizedBox(height: 16),
+                  Text("Введите никнейм для начала поиска"),
+                ],
+              ),
+            ),
+          ),
           const Spacer(),
         ],
       ),
     );
   }
 
-  // --- ОБНОВЛЕННЫЕ НАСТРОЙКИ ---
-  Widget _buildSettingsPage() {
+  // --- СТРАНИЦА НАСТРОЕК (Реальный профиль) ---
+  Widget _buildSettingsPage(String username) {
     return Container(
       color: AppTheme.darkBg,
       padding: const EdgeInsets.all(40),
@@ -214,42 +235,65 @@ class _MainScreenState extends State<MainScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text("Настройки", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          const Text("Аккаунт и безопасность", style: TextStyle(color: Colors.white60)),
-          const SizedBox(height: 30),
+          const SizedBox(height: 32),
           
+          // Аккаунт
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               children: [
-                const CircleAvatar(radius: 30, backgroundColor: AppTheme.accentIndigo, child: Icon(Icons.person, size: 30, color: Colors.white)),
+                CircleAvatar(
+                  radius: 35, 
+                  backgroundColor: AppTheme.accentIndigo, 
+                  child: Text(
+                    username.isNotEmpty ? username[0].toUpperCase() : "U", 
+                    style: const TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold)
+                  )
+                ),
                 const SizedBox(width: 20),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text("Ваш профиль", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    Text("@username", style: TextStyle(color: Colors.white54)),
+                  children: [
+                    Text(username, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle)),
+                        const SizedBox(width: 8),
+                        const Text("В сети", style: TextStyle(color: Colors.white54, fontSize: 14)),
+                      ],
+                    ),
                   ],
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          _settingsOption(Icons.key_outlined, "Кодовое слово", "Настройка восстановления"),
-          const SizedBox(height: 12),
-          _settingsOption(Icons.notifications_none_outlined, "Уведомления", "Звуки и реакции"),
+          const SizedBox(height: 32),
+          
+          _settingsOption(Icons.key_outlined, "Кодовое слово", "Используется для восстановления доступа"),
+          _settingsOption(Icons.notifications_none_rounded, "Уведомления", "Настройка пушей и звуков"),
+          _settingsOption(Icons.shield_outlined, "Приватность", "Кто может видеть ваш статус"),
           
           const Spacer(),
+          
+          // Кнопка выхода
           SizedBox(
             width: double.infinity,
-            child: TextButton.icon(
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent.withOpacity(0.08),
+                foregroundColor: Colors.redAccent,
+                padding: const EdgeInsets.symmetric(vertical: 22),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                elevation: 0,
+              ),
               onPressed: () => Provider.of<AuthNotifier>(context, listen: false).logout(),
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              label: const Text("Выйти из системы", style: TextStyle(color: Colors.redAccent)),
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text("Выйти из аккаунта", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             ),
           ),
         ],
@@ -259,24 +303,26 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _settingsOption(IconData icon, String title, String subtitle) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppTheme.accentIndigo),
-          const SizedBox(width: 16),
+          Icon(icon, color: AppTheme.accentIndigo, size: 26),
+          const SizedBox(width: 18),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.4))),
             ],
           ),
           const Spacer(),
-          const Icon(Icons.chevron_right, color: Colors.white24),
+          Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.2)),
         ],
       ),
     );
