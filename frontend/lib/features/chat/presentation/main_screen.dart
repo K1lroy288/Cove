@@ -1,11 +1,12 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../widgets/chat_list_panel.dart';
-import '../widgets/chat_window_panel.dart';
-import '../shared/theme/app_theme.dart';
-import '../shared/services/auth_notifier.dart';
-import '../shared/services/api_service.dart';
-import '../shared/models/user_dto.dart';
+import 'widgets/chat_list_panel.dart';
+import 'widgets/chat_window_panel.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../auth/presentation/auth_notifier.dart';
+import '../../../core/network/api_service.dart';
+import '../../user/data/models/user_dto.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -15,9 +16,8 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0; 
-  String? _selectedChatId; 
-  // В начало класса _MainScreenState
+  int _selectedIndex = 0;
+  String? _selectedChatId;
   final ApiService _apiService = ApiService();
   final TextEditingController _searchController = TextEditingController();
   UserDTO? _foundUser;
@@ -26,14 +26,12 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 🔥 Получаем данные пользователя
     final auth = context.watch<AuthNotifier>();
     final String currentUsername = auth.username ?? "User";
 
     return Scaffold(
       body: Row(
         children: [
-          // 1. БОКОВАЯ ПАНЕЛЬ (NavigationRail)
           NavigationRail(
             backgroundColor: AppTheme.darkBg,
             selectedIndex: _selectedIndex,
@@ -48,24 +46,22 @@ class _MainScreenState extends State<MainScreen> {
             unselectedIconTheme: const IconThemeData(color: Colors.white24),
             destinations: const [
               NavigationRailDestination(
-                icon: Icon(Icons.forum_outlined), 
-                selectedIcon: Icon(Icons.forum), 
-                label: Text('Чаты')
+                icon: Icon(Icons.forum_outlined),
+                selectedIcon: Icon(Icons.forum),
+                label: Text('Чаты'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.search), 
-                label: Text('Поиск')
+                icon: Icon(Icons.search),
+                label: Text('Поиск'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.settings_outlined), 
-                selectedIcon: Icon(Icons.settings), 
-                label: Text('Настройки')
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: Text('Настройки'),
               ),
             ],
           ),
           const VerticalDivider(width: 1, color: Colors.white10),
-
-          // 2. ОСНОВНОЙ КОНТЕНТ
           Expanded(
             child: _buildCurrentPage(currentUsername),
           ),
@@ -87,7 +83,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  // --- ЛОГИКА СЕКЦИИ ЧАТОВ ---
   Widget _buildChatLayout(String username) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -104,29 +99,27 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const VerticalDivider(width: 1, color: Colors.white10),
               Expanded(
-                child: _selectedChatId == null 
-                  ? _buildDashboard(username) 
-                  : ChatWindowPanel(
-                      chatId: _selectedChatId!, 
-                      onBack: () => setState(() => _selectedChatId = null)
-                    ),
+                child: _selectedChatId == null
+                    ? _buildDashboard(username)
+                    : ChatWindowPanel(
+                        chatId: _selectedChatId!,
+                        onBack: () => setState(() => _selectedChatId = null),
+                      ),
               ),
             ],
           );
         } else {
-          // Мобильная адаптация
-          return _selectedChatId == null 
-            ? ChatListPanel(onChatSelected: (id) => setState(() => _selectedChatId = id))
-            : ChatWindowPanel(
-                chatId: _selectedChatId!, 
-                onBack: () => setState(() => _selectedChatId = null)
-              );
+          return _selectedChatId == null
+              ? ChatListPanel(onChatSelected: (id) => setState(() => _selectedChatId = id))
+              : ChatWindowPanel(
+                  chatId: _selectedChatId!,
+                  onBack: () => setState(() => _selectedChatId = null),
+                );
         }
       },
     );
   }
 
-  // --- РЕАЛЬНЫЙ ДАШБОРД (Без заглушек) ---
   Widget _buildDashboard(String username) {
     return Container(
       color: AppTheme.darkBg,
@@ -134,13 +127,16 @@ class _MainScreenState extends State<MainScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Привет, $username 👋", 
-            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+          Text(
+            "Привет, $username 👋",
+            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
           const SizedBox(height: 10),
-          Text("Рады видеть тебя в Cove. У тебя нет пропущенных вызовов.", 
-            style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16)),
+          Text(
+            "Рады видеть тебя в Cove. У тебя нет пропущенных вызовов.",
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16),
+          ),
           const SizedBox(height: 40),
-          
           Expanded(
             child: GridView.count(
               crossAxisCount: 2,
@@ -166,13 +162,16 @@ class _MainScreenState extends State<MainScreen> {
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.03)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.03)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
             child: Icon(icon, color: color, size: 28),
           ),
           const SizedBox(width: 20),
@@ -185,13 +184,12 @@ class _MainScreenState extends State<MainScreen> {
                 Text(subtitle, style: const TextStyle(fontSize: 13, color: Colors.white38)),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
   }
 
-  // --- СТРАНИЦА ПОИСКА ---
   Widget _buildSearchPage() {
     return Container(
       color: AppTheme.darkBg,
@@ -205,22 +203,19 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(height: 32),
           TextField(
             controller: _searchController,
-            onSubmitted: (_) => _handleSearch(), // Поиск по Enter
+            onSubmitted: (_) => _handleSearch(),
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: "Введите ID (например: 1)",
-              // ... твои стили декорации ...
               suffixIcon: IconButton(
-                icon: _isSearching 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.arrow_forward, color: AppTheme.accentIndigo),
+                icon: _isSearching
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.arrow_forward, color: AppTheme.accentIndigo),
                 onPressed: _handleSearch,
               ),
             ),
           ),
           const SizedBox(height: 20),
-
-          // Отображение результата
           if (_foundUser != null)
             _buildUserResultCard(_foundUser!)
           else if (_errorMessage != null)
@@ -261,7 +256,7 @@ class _MainScreenState extends State<MainScreen> {
           Text(user.username, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const Spacer(),
           ElevatedButton(
-            onPressed: () => print("Запрос в друзья для ID: ${user.id}"),
+            onPressed: () => log("Запрос в друзья для ID: ${user.id}"),
             child: const Text("Добавить"),
           ),
         ],
@@ -291,7 +286,6 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  // --- СТРАНИЦА НАСТРОЕК (Реальный профиль) ---
   Widget _buildSettingsPage(String username) {
     return Container(
       color: AppTheme.darkBg,
@@ -301,8 +295,6 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           const Text("Настройки", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
           const SizedBox(height: 32),
-          
-          // Аккаунт
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -312,12 +304,12 @@ class _MainScreenState extends State<MainScreen> {
             child: Row(
               children: [
                 CircleAvatar(
-                  radius: 35, 
-                  backgroundColor: AppTheme.accentIndigo, 
+                  radius: 35,
+                  backgroundColor: AppTheme.accentIndigo,
                   child: Text(
-                    username.isNotEmpty ? username[0].toUpperCase() : "U", 
-                    style: const TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold)
-                  )
+                    username.isNotEmpty ? username[0].toUpperCase() : "U",
+                    style: const TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(width: 20),
                 Column(
@@ -338,19 +330,15 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           const SizedBox(height: 32),
-          
           _settingsOption(Icons.key_outlined, "Кодовое слово", "Используется для восстановления доступа"),
           _settingsOption(Icons.notifications_none_rounded, "Уведомления", "Настройка пушей и звуков"),
           _settingsOption(Icons.shield_outlined, "Приватность", "Кто может видеть ваш статус"),
-          
           const Spacer(),
-          
-          // Кнопка выхода
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent.withOpacity(0.08),
+                backgroundColor: Colors.redAccent.withValues(alpha: 0.08),
                 foregroundColor: Colors.redAccent,
                 padding: const EdgeInsets.symmetric(vertical: 22),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -383,11 +371,11 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 2),
-              Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.4))),
+              Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.4))),
             ],
           ),
           const Spacer(),
-          Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.2)),
+          Icon(Icons.chevron_right_rounded, color: Colors.white.withValues(alpha: 0.2)),
         ],
       ),
     );

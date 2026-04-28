@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../shared/theme/app_theme.dart';
+import '../../../../core/theme/app_theme.dart';
 
 class ChatListPanel extends StatelessWidget {
   final Function(String) onChatSelected;
@@ -8,14 +8,12 @@ class ChatListPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // В будущем этот список будет приходить из БД
     final List<Map<String, String>> demoChats = [];
 
     return Container(
       color: AppTheme.darkBg,
       child: Column(
         children: [
-          // Заголовок списка
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(

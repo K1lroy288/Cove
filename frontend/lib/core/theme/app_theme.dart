@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Твои цвета
   static const Color darkBg = Color(0xFF12121A);
   static const Color surface = Color(0xFF1E1E26);
   static const Color accentIndigo = Color(0xFF6366F1);

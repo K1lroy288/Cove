@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 // Твои существующие импорты
-import 'shared/theme/app_theme.dart';
-import 'shared/services/auth_notifier.dart';
+import 'core/theme/app_theme.dart';
+import 'features/auth/presentation/auth_notifier.dart';
 import 'features/auth/presentation/auth_screen.dart';
-
-// Новый импорт для главного экрана
-import 'screens/main_screen.dart';
+import 'features/chat/presentation/main_screen.dart';
 
 void main() {
   runApp(

@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'package:http/http.dart' as http;
-import '../models/user_dto.dart'; // проверь путь до модели
+import '../../features/user/data/models/user_dto.dart';
 
 class ApiService {
-  static const String baseUrl = "http://localhost:3425"; 
+  static const String baseUrl = "http://localhost:3425";
 
   Future<UserDTO?> findUserById(String id) async {
     try {
