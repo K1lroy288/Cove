@@ -35,9 +35,13 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	repo := repository.NewUserRepository(db)
-	service := service.NewUserService(repo)
-	handler := handler.NewUserHandler(service)
+	userRepo := repository.NewUserRepository(db)
+	userService := service.NewUserService(userRepo)
+	userHandler := handler.NewUserHandler(userService)
+
+	friendshipRepo := repository.NewFriendshipRepository(db)
+	friendshipService := service.NewFriendshipService(friendshipRepo)
+	friendshipHandler := handler.NewFriendshipHandler(friendshipService)
 
 	r := gin.Default()
 
@@ -47,14 +51,19 @@ func main() {
 
 	auth := r.Group("/auth")
 	{
-		auth.POST("/login", handler.Login)
+		auth.POST("/login", userHandler.Login)
 
-		auth.POST("/register", handler.CreateUser)
+		auth.POST("/register", userHandler.CreateUser)
 	}
 
 	user := r.Group("/user")
 	{
-		user.GET("/:id")
+		user.GET("/:id", userHandler.FindUserByID)
+	}
+
+	friendship := r.Group("/friendship")
+	{
+		friendship.POST("/", friendshipHandler.CreateFriendship)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)

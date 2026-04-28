@@ -4,6 +4,8 @@ import '../widgets/chat_list_panel.dart';
 import '../widgets/chat_window_panel.dart';
 import '../shared/theme/app_theme.dart';
 import '../shared/services/auth_notifier.dart';
+import '../shared/services/api_service.dart';
+import '../shared/models/user_dto.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -15,6 +17,12 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0; 
   String? _selectedChatId; 
+  // В начало класса _MainScreenState
+  final ApiService _apiService = ApiService();
+  final TextEditingController _searchController = TextEditingController();
+  UserDTO? _foundUser;
+  bool _isSearching = false;
+  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -196,17 +204,27 @@ class _MainScreenState extends State<MainScreen> {
           const Text("Найдите собеседника по уникальному никнейму", style: TextStyle(color: Colors.white54)),
           const SizedBox(height: 32),
           TextField(
+            controller: _searchController,
+            onSubmitted: (_) => _handleSearch(), // Поиск по Enter
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
-              hintText: "Например: alex_cove",
-              hintStyle: const TextStyle(color: Colors.white24),
-              prefixIcon: const Icon(Icons.search, color: AppTheme.accentIndigo),
-              filled: true,
-              fillColor: AppTheme.surface,
-              contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+              hintText: "Введите ID (например: 1)",
+              // ... твои стили декорации ...
+              suffixIcon: IconButton(
+                icon: _isSearching 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.arrow_forward, color: AppTheme.accentIndigo),
+                onPressed: _handleSearch,
+              ),
             ),
           ),
+          const SizedBox(height: 20),
+
+          // Отображение результата
+          if (_foundUser != null)
+            _buildUserResultCard(_foundUser!)
+          else if (_errorMessage != null)
+            Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent))),
           const Spacer(),
           Center(
             child: Opacity(
@@ -224,6 +242,53 @@ class _MainScreenState extends State<MainScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildUserResultCard(UserDTO user) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: AppTheme.accentIndigo,
+            child: Text(user.username[0].toUpperCase()),
+          ),
+          const SizedBox(width: 16),
+          Text(user.username, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          ElevatedButton(
+            onPressed: () => print("Запрос в друзья для ID: ${user.id}"),
+            child: const Text("Добавить"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleSearch() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) return;
+
+    setState(() {
+      _isSearching = true;
+      _errorMessage = null;
+      _foundUser = null;
+    });
+
+    final user = await _apiService.findUserById(query);
+
+    setState(() {
+      _isSearching = false;
+      if (user != null) {
+        _foundUser = user;
+      } else {
+        _errorMessage = "Пользователь не найден";
+      }
+    });
   }
 
   // --- СТРАНИЦА НАСТРОЕК (Реальный профиль) ---

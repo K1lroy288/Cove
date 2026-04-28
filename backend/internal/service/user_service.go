@@ -81,7 +81,6 @@ func (s *UserService) UpdateUser(userDTO dto.User) error {
 func (s *UserService) GetUserByID(id uint) (*dto.User, error) {
 	user, err := s.repo.GetUserById(id)
 	if err != nil {
-		// Если GORM не нашел запись
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("user not found")
 		}
