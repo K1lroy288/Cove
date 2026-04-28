@@ -58,6 +58,8 @@ func main() {
 
 	user := r.Group("/user")
 	{
+		user.GET("/search", userHandler.SearchUser)
+		user.GET("/username/:username", userHandler.FindUserByUsername)
 		user.GET("/:id", userHandler.FindUserByID)
 	}
 

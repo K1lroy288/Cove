@@ -1,12 +1,9 @@
-import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'widgets/chat_list_panel.dart';
 import 'widgets/chat_window_panel.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/presentation/auth_notifier.dart';
-import '../../../core/network/api_service.dart';
-import '../../user/data/models/user_dto.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -18,11 +15,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   String? _selectedChatId;
-  final ApiService _apiService = ApiService();
-  final TextEditingController _searchController = TextEditingController();
-  UserDTO? _foundUser;
-  bool _isSearching = false;
-  String? _errorMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -51,10 +43,6 @@ class _MainScreenState extends State<MainScreen> {
                 label: Text('Чаты'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.search),
-                label: Text('Поиск'),
-              ),
-              NavigationRailDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: Text('Настройки'),
@@ -63,30 +51,19 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const VerticalDivider(width: 1, color: Colors.white10),
           Expanded(
-            child: _buildCurrentPage(currentUsername),
+            child: _selectedIndex == 0
+                ? _buildChatLayout(currentUsername)
+                : _buildSettingsPage(currentUsername),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCurrentPage(String username) {
-    switch (_selectedIndex) {
-      case 0:
-        return _buildChatLayout(username);
-      case 1:
-        return _buildSearchPage();
-      case 2:
-        return _buildSettingsPage(username);
-      default:
-        return _buildChatLayout(username);
-    }
-  }
-
   Widget _buildChatLayout(String username) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        bool isDesktop = constraints.maxWidth > 800;
+        final isDesktop = constraints.maxWidth > 800;
 
         if (isDesktop) {
           return Row(
@@ -190,102 +167,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildSearchPage() {
-    return Container(
-      color: AppTheme.darkBg,
-      padding: const EdgeInsets.all(40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("Поиск", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text("Найдите собеседника по уникальному никнейму", style: TextStyle(color: Colors.white54)),
-          const SizedBox(height: 32),
-          TextField(
-            controller: _searchController,
-            onSubmitted: (_) => _handleSearch(),
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: "Введите ID (например: 1)",
-              suffixIcon: IconButton(
-                icon: _isSearching
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.arrow_forward, color: AppTheme.accentIndigo),
-                onPressed: _handleSearch,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          if (_foundUser != null)
-            _buildUserResultCard(_foundUser!)
-          else if (_errorMessage != null)
-            Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.redAccent))),
-          const Spacer(),
-          Center(
-            child: Opacity(
-              opacity: 0.3,
-              child: Column(
-                children: const [
-                  Icon(Icons.manage_search, size: 64, color: Colors.white),
-                  SizedBox(height: 16),
-                  Text("Введите никнейм для начала поиска"),
-                ],
-              ),
-            ),
-          ),
-          const Spacer(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUserResultCard(UserDTO user) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: AppTheme.accentIndigo,
-            child: Text(user.username[0].toUpperCase()),
-          ),
-          const SizedBox(width: 16),
-          Text(user.username, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const Spacer(),
-          ElevatedButton(
-            onPressed: () => log("Запрос в друзья для ID: ${user.id}"),
-            child: const Text("Добавить"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleSearch() async {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) return;
-
-    setState(() {
-      _isSearching = true;
-      _errorMessage = null;
-      _foundUser = null;
-    });
-
-    final user = await _apiService.findUserById(query);
-
-    setState(() {
-      _isSearching = false;
-      if (user != null) {
-        _foundUser = user;
-      } else {
-        _errorMessage = "Пользователь не найден";
-      }
-    });
-  }
-
   Widget _buildSettingsPage(String username) {
     return Container(
       color: AppTheme.darkBg,
@@ -319,7 +200,11 @@ class _MainScreenState extends State<MainScreen> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle)),
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(color: Colors.greenAccent, shape: BoxShape.circle),
+                        ),
                         const SizedBox(width: 8),
                         const Text("В сети", style: TextStyle(color: Colors.white54, fontSize: 14)),
                       ],

@@ -52,8 +52,8 @@ func (h *UserHandler) Login(ctx *gin.Context) {
 
 	response := gin.H{
 		"token":    token,
-		"userId":   "usr_123",
-		"username": req.Username,
+		"userId":   user.ID,
+		"username": user.Username,
 	}
 	ctx.JSON(http.StatusOK, response)
 }
@@ -81,6 +81,42 @@ func (h *UserHandler) CreateUser(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusCreated)
+}
+
+func (h *UserHandler) FindUserByUsername(ctx *gin.Context) {
+	username := ctx.Param("username")
+
+	user, err := h.service.GetPublicUserByUsername(username)
+	if err != nil {
+		if err.Error() == "user not found" {
+			ctx.JSON(http.StatusNotFound, gin.H{"message": "Пользователь не найден"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (h *UserHandler) SearchUser(ctx *gin.Context) {
+	q := ctx.Query("q")
+	if q == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Параметр поиска не указан"})
+		return
+	}
+
+	user, err := h.service.SearchUser(q)
+	if err != nil {
+		if err.Error() == "user not found" {
+			ctx.JSON(http.StatusNotFound, gin.H{"message": "Пользователь не найден"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
 }
 
 func (h *UserHandler) FindUserByID(ctx *gin.Context) {

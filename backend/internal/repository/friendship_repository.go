@@ -17,7 +17,3 @@ func NewFriendshipRepository(db *gorm.DB) *FriendshipRepository {
 func (r *FriendshipRepository) CreateFriendship(friendship *model.Friendship) error {
 	return r.DB.Create(friendship).Error
 }
-
-func (r *FriendshipRepository) UpdateFriendship(friendship *model.Friendship) error {
-	return r.DB.Save(friendship).Error
-}

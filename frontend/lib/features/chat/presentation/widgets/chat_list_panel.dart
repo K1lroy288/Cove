@@ -1,21 +1,81 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../auth/presentation/auth_notifier.dart';
+import '../../../user/data/models/user_dto.dart';
 
-class ChatListPanel extends StatelessWidget {
+class ChatListPanel extends StatefulWidget {
   final Function(String) onChatSelected;
 
   const ChatListPanel({super.key, required this.onChatSelected});
 
   @override
-  Widget build(BuildContext context) {
-    final List<Map<String, String>> demoChats = [];
+  State<ChatListPanel> createState() => _ChatListPanelState();
+}
 
+class _ChatListPanelState extends State<ChatListPanel> {
+  final ApiService _apiService = ApiService();
+  final TextEditingController _searchController = TextEditingController();
+  UserDTO? _foundUser;
+  bool _isSearching = false;
+  bool _isSendingRequest = false;
+  String? _errorMessage;
+  bool get _hasQuery => _searchController.text.trim().isNotEmpty;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _foundUser = null;
+        _errorMessage = null;
+      });
+      return;
+    }
+
+    final auth = context.read<AuthNotifier>();
+    final isSelf = trimmed.toLowerCase() == (auth.username ?? '').toLowerCase() ||
+        trimmed == (auth.userId ?? '');
+    if (isSelf) {
+      setState(() {
+        _foundUser = null;
+        _errorMessage = "Это вы";
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _errorMessage = null;
+      _foundUser = null;
+    });
+
+    final user = await _apiService.searchUser(trimmed);
+
+    setState(() {
+      _isSearching = false;
+      if (user != null) {
+        _foundUser = user;
+      } else {
+        _errorMessage = "Пользователь не найден";
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       color: AppTheme.darkBg,
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
                 const Text("Сообщения", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -24,28 +84,156 @@ class ChatListPanel extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: demoChats.length,
-              itemBuilder: (context, index) {
-                final chat = demoChats[index];
-                return ListTile(
-                  onTap: () => onChatSelected(chat['name']!),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  leading: CircleAvatar(
-                    radius: 24,
-                    backgroundColor: AppTheme.surface,
-                    child: Text(chat['name']![0], style: const TextStyle(color: AppTheme.accentIndigo, fontWeight: FontWeight.bold)),
-                  ),
-                  title: Text(chat['name']!, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(chat['lastMsg']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38)),
-                  trailing: Text(chat['time']!, style: const TextStyle(fontSize: 11, color: Colors.white24)),
-                );
-              },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _handleSearch,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "Найти пользователя...",
+                hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
+                prefixIcon: const Icon(Icons.search, color: Colors.white30, size: 20),
+                suffixIcon: _hasQuery
+                    ? IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white30, size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          _handleSearch('');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: AppTheme.surface,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
+          ),
+          Expanded(
+            child: _hasQuery ? _buildSearchResults() : _buildChatList(),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_foundUser != null) {
+      return _buildUserResultCard(_foundUser!);
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Text(_errorMessage!, style: const TextStyle(color: Colors.white38, fontSize: 14)),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildUserResultCard(UserDTO user) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+        child: Text(
+          user.username[0].toUpperCase(),
+          style: const TextStyle(color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
+        ),
+      ),
+      title: Text(user.username, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: const Text("Нажмите, чтобы добавить", style: TextStyle(color: Colors.white38, fontSize: 12)),
+      trailing: _isSendingRequest
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentIndigo),
+            )
+          : IconButton(
+              icon: const Icon(Icons.person_add_outlined, color: AppTheme.accentIndigo),
+              onPressed: () => _handleAddFriend(user),
+            ),
+    );
+  }
+
+  Future<void> _handleAddFriend(UserDTO friend) async {
+    final auth = context.read<AuthNotifier>();
+    final currentUserId = int.tryParse(auth.userId ?? '');
+    final token = auth.token;
+
+    if (currentUserId == null || token == null) return;
+
+    setState(() => _isSendingRequest = true);
+
+    final (success, message) = await _apiService.createFriendship(
+      userId: currentUserId,
+      friendId: friend.id,
+      token: token,
+    );
+
+    if (!mounted) return;
+    setState(() => _isSendingRequest = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green.shade700 : Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Widget _buildChatList() {
+    final List<Map<String, String>> demoChats = [];
+
+    if (demoChats.isEmpty) {
+      return Center(
+        child: Opacity(
+          opacity: 0.3,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.forum_outlined, size: 48, color: Colors.white),
+              SizedBox(height: 12),
+              Text("Чатов пока нет", style: TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: demoChats.length,
+      itemBuilder: (context, index) {
+        final chat = demoChats[index];
+        return ListTile(
+          onTap: () => widget.onChatSelected(chat['name']!),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: CircleAvatar(
+            radius: 24,
+            backgroundColor: AppTheme.surface,
+            child: Text(
+              chat['name']![0],
+              style: const TextStyle(color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
+            ),
+          ),
+          title: Text(chat['name']!, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(
+            chat['lastMsg']!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white38),
+          ),
+          trailing: Text(chat['time']!, style: const TextStyle(fontSize: 11, color: Colors.white24)),
+        );
+      },
     );
   }
 }

@@ -9,11 +9,10 @@ class AuthResponse {
     required this.username,
   });
 
-  // Преобразует JSON от сервера в Dart-объект
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
     return AuthResponse(
       token: json['token'] as String,
-      userId: json['userId'] as String,
+      userId: json['userId'].toString(),
       username: json['username'] as String,
     );
   }

@@ -96,8 +96,9 @@ class _AuthScreenState extends State<AuthScreen> {
         // Consumer в main.dart увидит изменение и САМ переключит экран на MainScreen.
         if (mounted) {
           Provider.of<AuthNotifier>(context, listen: false).login(
-            response.username, 
-            response.token
+            response.userId,
+            response.username,
+            response.token,
           );
         }
         
@@ -133,14 +134,6 @@ class _AuthScreenState extends State<AuthScreen> {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  // 💾 Сохранение токена (заглушка)
-  void _saveToken(String token) {
-    print('🔑 Токен получен: $token');
-    // TODO: В продакшене использовать flutter_secure_storage:
-    // final storage = FlutterSecureStorage();
-    // await storage.write(key: 'auth_token', value: token);
   }
 
   // 🔄 Переключение между Входом и Регистрацией
