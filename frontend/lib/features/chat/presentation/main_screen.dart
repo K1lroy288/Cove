@@ -7,6 +7,7 @@ import '../../voice/presentation/voice_notifier.dart';
 import '../../voice/presentation/widgets/voice_room_list_panel.dart';
 import '../../voice/presentation/widgets/voice_room_page.dart';
 import '../../chat/data/models/chat.dart';
+import '../../friends/presentation/widgets/friends_panel.dart';
 import 'widgets/chat_list_panel.dart';
 import 'widgets/chat_window_panel.dart';
 
@@ -40,6 +41,7 @@ class _MainScreenState extends State<MainScreen> {
                     index: _selectedIndex,
                     children: [
                       _buildChatLayout(username),
+                      _buildFriendsLayout(),
                       _buildVoiceLayout(),
                       _buildSettingsPage(username),
                     ],
@@ -72,6 +74,11 @@ class _MainScreenState extends State<MainScreen> {
           icon: Icon(Icons.forum_outlined),
           selectedIcon: Icon(Icons.forum),
           label: Text('Чаты'),
+        ),
+        NavigationRailDestination(
+          icon: Icon(Icons.people_outline),
+          selectedIcon: Icon(Icons.people),
+          label: Text('Друзья'),
         ),
         NavigationRailDestination(
           icon: Icon(Icons.graphic_eq_outlined),
@@ -219,6 +226,17 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // ── Friends layout ────────────────────────────────────────────────────────────
+
+  Widget _buildFriendsLayout() {
+    return FriendsPanel(
+      onOpenChat: (Chat chat) => setState(() {
+        _selectedIndex = 0;
+        _selectedChat = chat;
+      }),
     );
   }
 

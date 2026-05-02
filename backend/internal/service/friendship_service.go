@@ -36,3 +36,11 @@ func (s *FriendshipService) CreateFriendship(friendshipDTO dto.Friendship) error
 
 	return s.repo.CreateFriendship(friendship)
 }
+
+func (s *FriendshipService) RespondToFriendRequest(senderID, receiverID uint, status string) error {
+	return s.repo.RespondToFriendRequest(senderID, receiverID, status)
+}
+
+func (s *FriendshipService) GetFriends(userID uint) ([]dto.Friend, error) {
+	return s.repo.GetFriends(userID)
+}

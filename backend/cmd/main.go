@@ -4,6 +4,7 @@ import (
 	"cove/internal/config"
 	migrator "cove/internal/db"
 	"cove/internal/handler"
+	"cove/internal/middleware"
 	"cove/internal/repository"
 	"cove/internal/service"
 	"fmt"
@@ -23,10 +24,8 @@ func main() {
 	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
 		cfg.DB.Host, cfg.DB.User, cfg.DB.Password, cfg.DB.Name, cfg.DB.Port)
 
-	migrator := migrator.MustGetNewMigrator(migrator.MigrationsFS, migrationsDir)
-
-	err := migrator.ApplyMigrationsWithGORM(dsn)
-	if err != nil {
+	m := migrator.MustGetNewMigrator(migrator.MigrationsFS, migrationsDir)
+	if err := m.ApplyMigrationsWithGORM(dsn); err != nil {
 		log.Fatalf("Failed to apply migrations: %v", err)
 	}
 
@@ -49,13 +48,16 @@ func main() {
 		ctx.String(http.StatusOK, "Cove is up!")
 	})
 
+	// ── Auth (без токена) ────────────────────────────────────────────────────────
 	auth := r.Group("/auth")
 	{
 		auth.POST("/login", userHandler.Login)
-
 		auth.POST("/register", userHandler.CreateUser)
 	}
 
+	// ── Users (без токена) ───────────────────────────────────────────────────────
+	// Маршруты зарегистрированы в строгом порядке: /search и /username/:u до /:id,
+	// иначе Gin захватит их как path param.
 	user := r.Group("/user")
 	{
 		user.GET("/search", userHandler.SearchUser)
@@ -63,11 +65,15 @@ func main() {
 		user.GET("/:id", userHandler.FindUserByID)
 	}
 
+	// ── Friendship (требует JWT) ──────────────────────────────────────────────────
 	friendship := r.Group("/friendship")
+	friendship.Use(middleware.JWTAuth())
 	{
 		friendship.GET("/pending", friendshipHandler.GetPendingRequests)
 		friendship.GET("/pending/count", friendshipHandler.GetPendingRequestsCount)
+		friendship.GET("/friends", friendshipHandler.GetFriends)
 		friendship.POST("/", friendshipHandler.CreateFriendship)
+		friendship.PATCH("/:user_id/status", friendshipHandler.RespondToFriendRequest)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
