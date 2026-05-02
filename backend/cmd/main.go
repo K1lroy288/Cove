@@ -65,6 +65,8 @@ func main() {
 
 	friendship := r.Group("/friendship")
 	{
+		friendship.GET("/pending", friendshipHandler.GetPendingRequests)
+		friendship.GET("/pending/count", friendshipHandler.GetPendingRequestsCount)
 		friendship.POST("/", friendshipHandler.CreateFriendship)
 	}
 

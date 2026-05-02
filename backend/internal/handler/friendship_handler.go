@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -17,6 +18,42 @@ type FriendshipHandler struct {
 
 func NewFriendshipHandler(s *service.FriendshipService) *FriendshipHandler {
 	return &FriendshipHandler{service: s}
+}
+
+func (h *FriendshipHandler) GetPendingRequests(ctx *gin.Context) {
+	userIDStr := ctx.Query("user_id")
+	userID, err := strconv.ParseUint(userIDStr, 10, 32)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат user_id"})
+		return
+	}
+
+	requests, err := h.service.GetPendingRequests(uint(userID))
+	if err != nil {
+		log.Printf("get pending requests error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, requests)
+}
+
+func (h *FriendshipHandler) GetPendingRequestsCount(ctx *gin.Context) {
+	userIDStr := ctx.Query("user_id")
+	userID, err := strconv.ParseUint(userIDStr, 10, 32)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат user_id"})
+		return
+	}
+
+	count, err := h.service.GetPendingRequestsCount(uint(userID))
+	if err != nil {
+		log.Printf("get pending requests count error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"count": count})
 }
 
 func (h *FriendshipHandler) CreateFriendship(ctx *gin.Context) {

@@ -1,10 +1,51 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'package:http/http.dart' as http;
+import '../../features/user/data/models/friend_request.dart';
 import '../../features/user/data/models/user_dto.dart';
 
 class ApiService {
   static const String baseUrl = "http://localhost:3425";
+
+  Future<List<FriendRequest>> getPendingRequests({required String userId, required String token}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/friendship/pending?user_id=$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => FriendRequest.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      return [];
+    } catch (e) {
+      log("Error getting pending requests: $e");
+      return [];
+    }
+  }
+
+  Future<int> getPendingRequestsCount({required String userId, required String token}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/friendship/pending/count?user_id=$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return (data['count'] as num).toInt();
+      }
+      return 0;
+    } catch (e) {
+      log("Error getting pending count: $e");
+      return 0;
+    }
+  }
 
   Future<UserDTO?> searchUser(String query) async {
     return _fetchUser('$baseUrl/user/search?q=${Uri.encodeComponent(query)}');

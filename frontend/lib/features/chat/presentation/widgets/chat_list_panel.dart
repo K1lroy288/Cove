@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/auth_notifier.dart';
+import '../../../user/data/models/friend_request.dart';
 import '../../../user/data/models/user_dto.dart';
+
+enum _Tab { chats, requests }
 
 class ChatListPanel extends StatefulWidget {
   final Function(String) onChatSelected;
@@ -17,16 +20,41 @@ class ChatListPanel extends StatefulWidget {
 class _ChatListPanelState extends State<ChatListPanel> {
   final ApiService _apiService = ApiService();
   final TextEditingController _searchController = TextEditingController();
+
+  _Tab _activeTab = _Tab.chats;
   UserDTO? _foundUser;
   bool _isSearching = false;
   bool _isSendingRequest = false;
   String? _errorMessage;
+
+  List<FriendRequest> _pendingRequests = [];
+  int get _pendingRequestsCount => _pendingRequests.length;
+
   bool get _hasQuery => _searchController.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingRequests();
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPendingRequests() async {
+    final auth = context.read<AuthNotifier>();
+    final userId = auth.userId;
+    final token = auth.token;
+    if (userId == null || token == null) return;
+
+    final requests = await _apiService.getPendingRequests(
+      userId: userId,
+      token: token,
+    );
+    if (mounted) setState(() => _pendingRequests = requests);
   }
 
   Future<void> _handleSearch(String query) async {
@@ -84,39 +112,106 @@ class _ChatListPanelState extends State<ChatListPanel> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: TextField(
-              controller: _searchController,
-              onChanged: _handleSearch,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
-              decoration: InputDecoration(
-                hintText: "Найти пользователя...",
-                hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                prefixIcon: const Icon(Icons.search, color: Colors.white30, size: 20),
-                suffixIcon: _hasQuery
-                    ? IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white30, size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                          _handleSearch('');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: AppTheme.surface,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+          _buildTabSwitcher(),
+          if (_activeTab == _Tab.chats)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: TextField(
+                controller: _searchController,
+                onChanged: _handleSearch,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: "Найти пользователя...",
+                  hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
+                  prefixIcon: const Icon(Icons.search, color: Colors.white30, size: 20),
+                  suffixIcon: _hasQuery
+                      ? IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white30, size: 18),
+                          onPressed: () {
+                            _searchController.clear();
+                            _handleSearch('');
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: AppTheme.surface,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
-          ),
           Expanded(
-            child: _hasQuery ? _buildSearchResults() : _buildChatList(),
+            child: _activeTab == _Tab.chats
+                ? (_hasQuery ? _buildSearchResults() : _buildChatList())
+                : _buildRequestsList(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTabSwitcher() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            _tabButton("Чаты", _Tab.chats),
+            _tabButton("Заявки", _Tab.requests, badge: _pendingRequestsCount),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton(String label, _Tab tab, {int badge = 0}) {
+    final isActive = _activeTab == tab;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _activeTab = tab),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isActive ? AppTheme.darkBg : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                  color: isActive ? Colors.white : Colors.white38,
+                ),
+              ),
+              if (badge > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$badge',
+                    style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -232,6 +327,59 @@ class _ChatListPanelState extends State<ChatListPanel> {
             style: const TextStyle(color: Colors.white38),
           ),
           trailing: Text(chat['time']!, style: const TextStyle(fontSize: 11, color: Colors.white24)),
+        );
+      },
+    );
+  }
+
+  Widget _buildRequestsList() {
+    if (_pendingRequests.isEmpty) {
+      return Center(
+        child: Opacity(
+          opacity: 0.3,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.people_outline, size: 48, color: Colors.white),
+              SizedBox(height: 12),
+              Text("Заявок пока нет", style: TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _pendingRequests.length,
+      itemBuilder: (context, index) {
+        final req = _pendingRequests[index];
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: CircleAvatar(
+            radius: 24,
+            backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+            child: Text(
+              req.username[0].toUpperCase(),
+              style: const TextStyle(color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
+            ),
+          ),
+          title: Text(req.username, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text("Хочет добавить вас в друзья", style: TextStyle(color: Colors.white38, fontSize: 12)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.check_circle_outline, color: Colors.greenAccent),
+                tooltip: "Принять",
+                onPressed: () {},
+              ),
+              IconButton(
+                icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+                tooltip: "Отклонить",
+                onPressed: () {},
+              ),
+            ],
+          ),
         );
       },
     );
