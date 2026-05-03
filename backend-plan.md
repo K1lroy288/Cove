@@ -1,8 +1,8 @@
-# Cove — Backend API Plan
+# Cove — Backend Plan (актуальный)
 
 **Base URL:** `http://localhost:3425`  
 **Формат данных:** JSON  
-**Версия плана:** 1.0 (2026-05-02)
+**Версия:** 2.0 (2026-05-03) — с учётом db-optimization.md и ROADMAP.md
 
 ---
 
@@ -11,216 +11,440 @@
 ### Аутентификация
 Все защищённые эндпоинты требуют заголовок:
 ```
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <access_token>
 ```
-Токен выдаётся при логине. При отсутствии или невалидности токена — `401 Unauthorized`.
+Токен выдаётся при логине (`POST /auth/login`). При отсутствии или невалидности — `401 Unauthorized`.
 
 ### Формат ошибок
-Все ошибки возвращают JSON с полем `message`:
 ```json
-{ "message": "Описание ошибки на русском" }
+{ "message": "Описание ошибки" }
 ```
 
-### Коды статусов — общие правила
-| Код | Когда использовать |
+### HTTP-статусы
+| Код | Когда |
 |---|---|
-| `200` | Успешный GET или успешный PATCH/POST без нового ресурса |
-| `201` | Успешное создание ресурса (POST) |
-| `400` | Невалидный JSON, отсутствующие поля, бизнес-ошибка (дубликат, самодобавление) |
+| `200` | Успешный GET / PATCH / POST без нового ресурса |
+| `201` | Успешное создание ресурса |
+| `400` | Невалидный JSON, отсутствующие поля, бизнес-ошибка |
 | `401` | Отсутствует или невалидный JWT |
-| `403` | Токен валидный, но нет прав на действие |
+| `403` | Токен валидный, но нет прав |
 | `404` | Ресурс не найден |
 | `409` | Конфликт — ресурс уже существует |
+| `410` | Ресурс существовал, но больше недоступен |
+| `429` | Rate limit превышен |
 | `500` | Внутренняя ошибка сервера |
 
 ---
 
-## 1. Auth — Аутентификация
+## Архитектура
 
-### `POST /auth/register` ✅ Реализовано
-
-Регистрация нового пользователя.
-
-**Аутентификация:** не требуется
-
-**Тело запроса:**
-```json
-{
-  "username": "alice",
-  "password": "secret123"
-}
+### Сейчас (Фаза 1)
+```
+Flutter ──── HTTP/WS ──── Go (1 инстанс) ──── PostgreSQL
 ```
 
-| Поле | Тип | Обязательно | Описание |
-|---|---|---|---|
-| `username` | string | ✅ | Уникальный никнейм |
-| `password` | string | ✅ | Пароль в открытом виде (хешируется сервером) |
-
-**Успешный ответ — `201 Created`:**
+### Цель (Фаза 2, 100k DAU)
 ```
-(тело пустое)
+                    ┌──────────────────────────────────┐
+Flutter ──── HTTPS ─┤  Nginx (SSL termination,         │
+Flutter ────  WSS ──┤         sticky sessions для WS)  │
+                    └──────┬───────────────┬────────────┘
+                           │               │
+                    ┌──────▼──────┐  ┌─────▼──────┐
+                    │  Go App 1   │  │  Go App 2  │  (горизонтально)
+                    │  (Hub)      │  │  (Hub)     │
+                    └──────┬──────┘  └─────┬──────┘
+                           │               │
+                    ┌──────▼───────────────▼──────┐
+                    │            Redis             │
+                    │  • Pub/Sub (distributed Hub) │
+                    │  • Presence (online status)  │
+                    │  • Rate limiting             │
+                    └──────┬──────────────┬────────┘
+                           │              │
+              ┌────────────▼──┐  ┌────────▼──────┐
+              │ PostgreSQL    │  │  PostgreSQL   │
+              │  (Primary)    │  │  (Replica)    │
+              └───────────────┘  └───────────────┘
 ```
 
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON или пустые поля | `{ "message": "Неверный формат данных" }` |
-| `400` | Username уже занят (unique violation) | `{ "message": "Пользователь с таким именем уже существует" }` |
-| `500` | Ошибка БД | *(пустое тело)* |
+**Принципы:**
+- Go-инстансы stateless — состояние только в Redis и PostgreSQL
+- WebSocket Hub в Фазе 1 — in-memory map; в Фазе 2 — Redis Pub/Sub
+- Presence (онлайн-статус) — Redis SET с TTL, не PostgreSQL
+- Read-heavy запросы (история) — идут на реплику
 
 ---
 
-### `POST /auth/login` ✅ Реализовано
+## Файловая структура Go-проекта (целевая)
 
-Вход по username + password, возвращает JWT.
-
-**Аутентификация:** не требуется
-
-**Тело запроса:**
-```json
-{
-  "username": "alice",
-  "password": "secret123"
-}
+```
+backend/
+├── cmd/
+│   └── main.go                          — точка входа, роутинг, DI
+├── internal/
+│   ├── config/
+│   │   └── config.go                    — конфиг из env
+│   ├── db/
+│   │   ├── migrator.go
+│   │   └── migration/
+│   │       ├── 001_create_users.up.sql
+│   │       ├── 002_create_friendships.up.sql
+│   │       ├── 003_fix_friendship_indexes.up.sql    ← новая
+│   │       ├── 004_create_chats.up.sql              ← новая
+│   │       ├── 005_create_messages.up.sql           ← новая
+│   │       ├── 006_create_voice_rooms.up.sql        ← новая
+│   │       └── 007_create_reactions.up.sql          ← новая
+│   ├── hub/
+│   │   ├── hub.go                       — Hub struct, Register/Unregister/Run  ← новая
+│   │   ├── client.go                    — Client struct, readPump/writePump     ← новая
+│   │   └── message.go                   — WsMessage{Type, Payload}              ← новая
+│   ├── model/
+│   │   ├── user.go
+│   │   ├── friendship.go
+│   │   ├── chat.go                      — Chat, ChatMember, ChatReadCursor      ← новая
+│   │   ├── message.go                   — Message                               ← новая
+│   │   ├── voice_room.go                — VoiceRoom, RoomMember                 ← новая
+│   │   ├── reaction.go                  — Reaction                              ← новая
+│   │   └── custom_claims.go
+│   ├── DTO/
+│   │   ├── user.go
+│   │   ├── friendship.go
+│   │   ├── chat.go                      ← новая
+│   │   ├── message.go                   ← новая
+│   │   └── voice_room.go                ← новая
+│   ├── repository/
+│   │   ├── user_repository.go
+│   │   ├── friendship_repository.go     — обновить (симм. записи)
+│   │   ├── chat_repository.go           ← новая
+│   │   ├── message_repository.go        ← новая
+│   │   └── voice_room_repository.go     ← новая
+│   ├── service/
+│   │   ├── user_service.go
+│   │   ├── friendship_service.go        — обновить
+│   │   ├── chat_service.go              ← новая
+│   │   ├── message_service.go           ← новая
+│   │   └── voice_room_service.go        ← новая
+│   ├── handler/
+│   │   ├── user_handler.go
+│   │   ├── friendship_handler.go        — обновить
+│   │   ├── chat_handler.go              ← новая
+│   │   ├── message_handler.go           ← новая
+│   │   ├── voice_room_handler.go        ← новая
+│   │   └── ws_handler.go                ← новая
+│   ├── middleware/
+│   │   ├── auth.go
+│   │   └── rate_limit.go                ← новая (Фаза 2)
+│   └── utils/
+│       └── generate_jwt.go
+└── deployments/
+    ├── docker-compose.yml               — обновить (Redis, MinIO, LiveKit)
+    └── Dockerfile
 ```
 
-**Успешный ответ — `200 OK`:**
+---
+
+## Схема базы данных (целевая, оптимизированная)
+
+### Таблицы
+
+```sql
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Уже существует (migrations 001–002)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+users (
+  id            SERIAL PRIMARY KEY,
+  username      VARCHAR(100) UNIQUE NOT NULL,
+  password_hash BYTEA NOT NULL,
+  settings      JSONB,
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at    TIMESTAMPTZ                   -- мягкое удаление
+)
+
+friendships (
+  user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  friend_id  INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status     friendship_status NOT NULL DEFAULT 'pending',  -- ENUM: pending|accepted|blocked
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, friend_id),
+  CONSTRAINT check_not_self CHECK (user_id <> friend_id)
+)
+-- Важно: при принятии заявки создаются ДВЕ строки:
+--   (A→B, accepted) + (B→A, accepted)
+-- При удалении дружбы — удаляются обе строки.
+-- Это позволяет GetFriends делать WHERE user_id=? AND status='accepted'
+-- без OR-условий, которые не используют индекс.
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Migration 003: исправить индексы friendships
+-- ──────────────────────────────────────────────────────────────────────────────
+-- DROP INDEX idx_friendships_status;  ← бесполезен (3 значения, никогда не используется)
+-- Вместо него:
+-- idx_friendships_friend_status ON friendships(friend_id, status)  ← GetPendingRequests
+-- idx_friendships_user_status   ON friendships(user_id,   status)  ← GetFriends
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Migration 004: чаты
+-- ──────────────────────────────────────────────────────────────────────────────
+
+chats (
+  id                    SERIAL PRIMARY KEY,
+  last_message_id       INT REFERENCES messages(id),   -- денормализация для GET /chat/
+  last_message_at       TIMESTAMPTZ,
+  last_message_content  TEXT,
+  created_at            TIMESTAMPTZ DEFAULT NOW()
+)
+-- Поля last_message_* обновляются при каждой отправке сообщения.
+-- Благодаря этому GET /chat/ — простой JOIN без субзапросов.
+
+chat_members (
+  chat_id    INT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at  TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (chat_id, user_id)
+)
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Migration 005: сообщения
+-- ──────────────────────────────────────────────────────────────────────────────
+
+messages (
+  id          SERIAL PRIMARY KEY,
+  chat_id     INT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sender_id   INT NOT NULL REFERENCES users(id),
+  content     TEXT NOT NULL,
+  type        VARCHAR(20) NOT NULL DEFAULT 'text',   -- text|image|voice|file
+  reply_to_id INT REFERENCES messages(id),           -- Фаза 2: ответ/цитата
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  edited_at   TIMESTAMPTZ,
+  deleted_at  TIMESTAMPTZ                            -- мягкое удаление
+)
+
+chat_read_cursor (
+  chat_id              INT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  user_id              INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_read_message_id INT REFERENCES messages(id),
+  updated_at           TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (chat_id, user_id)
+)
+-- Заменяет read_status(message_id, user_id).
+-- read_status рос как O(messages × users) → миллиарды строк.
+-- chat_read_cursor растёт как O(chats × users) — в тысячи раз меньше.
+-- Непрочитанных: SELECT COUNT(*) FROM messages WHERE chat_id=? AND id > last_read_message_id
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Migration 006: голосовые комнаты (Фаза 4)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+voice_rooms (
+  id         SERIAL PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,
+  created_by INT NOT NULL REFERENCES users(id),
+  is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+)
+
+room_members (
+  room_id   INT NOT NULL REFERENCES voice_rooms(id) ON DELETE CASCADE,
+  user_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_muted  BOOLEAN NOT NULL DEFAULT FALSE,
+  joined_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (room_id, user_id)
+)
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Migration 007: реакции (Фаза 2)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+reactions (
+  message_id INT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id    INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji      VARCHAR(10) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (message_id, user_id, emoji)
+)
+```
+
+### Индексы (все)
+
+```sql
+-- users
+CREATE INDEX idx_users_username ON users(username);           -- уже есть (migration 001)
+
+-- friendships
+-- DROP INDEX idx_friendships_status;                         -- migration 003: убрать
+CREATE INDEX idx_friendships_friend_status ON friendships(friend_id, status);  -- GetPendingRequests
+CREATE INDEX idx_friendships_user_status   ON friendships(user_id,   status);  -- GetFriends
+
+-- chat_members
+CREATE INDEX idx_chat_members_user_id ON chat_members(user_id);  -- найти чаты пользователя
+
+-- messages
+CREATE INDEX idx_messages_chat_id ON messages(chat_id, id DESC);  -- cursor-based пагинация
+
+-- room_members (FK индексы создаются PostgreSQL автоматически)
+```
+
+---
+
+## Фаза 1 — Базовый мессенджер
+
+---
+
+### 1. Auth
+
+#### `POST /auth/register` ✅
+
+**Auth:** не требуется
+
+**Body:**
+```json
+{ "username": "alice", "password": "secret123" }
+```
+
+**Ответы:**
+| Код | Условие |
+|---|---|
+| `201` | Пользователь создан |
+| `400` | Невалидный JSON / пустые поля |
+| `400` | Username уже занят |
+
+---
+
+#### `POST /auth/login` ✅
+
+**Auth:** не требуется
+
+**Body:**
+```json
+{ "username": "alice", "password": "secret123" }
+```
+
+**Ответ `200`:**
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "eyJhbGci...",
   "userId": 42,
   "username": "alice"
 }
 ```
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `token` | string | JWT access token |
-| `userId` | number | ID пользователя (целое число) |
-| `username` | string | Username пользователя |
-
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON | `{ "message": "Неверный формат данных" }` |
-| `401` | Username не найден | `{ "message": "Неверное имя пользователя или пароль" }` |
-| `401` | Неверный пароль | `{ "message": "Неверное имя пользователя или пароль" }` |
-| `500` | Ошибка генерации JWT | `{ "message": "Ошибка аутентификации. Попробуйте позже" }` |
+| Код | Условие |
+|---|---|
+| `401` | Username не найден или неверный пароль |
 
 ---
 
-## 2. User — Пользователи
+#### `POST /auth/refresh` ❌ (Фаза 5)
 
-### `GET /user/search?q=<query>` ✅ Реализовано
+**Auth:** не требуется
 
-Поиск пользователя по username (точное совпадение) или по числовому ID.  
-Логика: сначала ищет по username, если не найден и `q` — число, ищет по ID.
+**Body:**
+```json
+{ "refresh_token": "eyJhbGci..." }
+```
 
-**Аутентификация:** не требуется  
-**Query параметры:** `q` — строка поиска (username или ID)
-
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 {
-  "id": 42,
-  "username": "alice"
+  "token": "eyJhbGci...",
+  "refresh_token": "eyJhbGci..."
 }
 ```
 
+**Логика:**
+1. Проверить refresh token (подпись, TTL, не в Redis-блэклисте)
+2. Выдать новый access token (15 мин) + новый refresh token (30 дней)
+3. Старый refresh token записать в Redis-блэклист (TTL = оставшееся время жизни)
+
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Параметр `q` не указан | `{ "message": "Параметр поиска не указан" }` |
-| `404` | Пользователь не найден | `{ "message": "Пользователь не найден" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+| Код | Условие |
+|---|---|
+| `401` | Невалидный или истёкший refresh token |
 
 ---
 
-### `GET /user/:id` ✅ Реализовано
+### 2. User
 
-Получить пользователя по числовому ID.
+#### `GET /user/search?q=<query>` ✅
 
-**Аутентификация:** не требуется  
-**Path параметры:** `id` — числовой ID
+**Auth:** не требуется
 
-**Успешный ответ — `200 OK`:**
+Поиск по exact username, затем (если q — число) по ID.
+
+**Ответ `200`:**
 ```json
-{
-  "id": 42,
-  "username": "alice"
-}
+{ "id": 42, "username": "alice" }
 ```
 
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `id` не является числом | `{ "message": "Неверный формат данных" }` |
-| `404` | Пользователь не найден | `{ "message": "Пользователь не найден" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+**Ошибки:** `400` (нет q), `404` (не найден)
 
 ---
 
-### `GET /user/username/:username` ✅ Реализовано
+#### `GET /user/username/:username` ✅
 
-Получить пользователя по точному username.
+**Auth:** не требуется  
+> Маршрут должен быть зарегистрирован **до** `/:id`, иначе Gin захватит его.
 
-**Аутентификация:** не требуется  
-**Path параметры:** `username` — строка
-
-> **Важно:** этот маршрут зарегистрирован **до** `/:id`, иначе Gin захватит его как числовой ID.
-
-**Успешный ответ — `200 OK`:** аналогично `GET /user/:id`
-
-**Ошибки:** аналогично `GET /user/:id`
+**Ответ `200`:** `{ "id": 42, "username": "alice" }`
 
 ---
 
-## 3. Friendship — Дружба
+#### `GET /user/:id` ✅
 
-### `POST /friendship/` ✅ Реализовано
+**Auth:** не требуется
 
-Отправить заявку в друзья. Создаёт запись со статусом `pending`.
+**Ответ `200`:** `{ "id": 42, "username": "alice" }`
 
-**Аутентификация:** требуется (JWT)
+**Ошибки:** `400` (id не число), `404`
 
-**Тело запроса:**
+---
+
+#### `GET /user/:id/presence` ❌ (Фаза 2)
+
+**Auth:** требуется (JWT)
+
+**Логика:** `GET presence:{id}` из Redis. Если ключ есть — online, нет — offline.
+
+**Ответ `200`:**
 ```json
-{
-  "user_id": 1,
-  "friend_id": 2,
-  "status": "pending"
-}
+{ "user_id": 42, "status": "online" }
 ```
-
-| Поле | Тип | Описание |
-|---|---|---|
-| `user_id` | number | ID отправителя заявки |
-| `friend_id` | number | ID получателя заявки |
-| `status` | string | Всегда `"pending"` при создании |
-
-**Успешный ответ — `201 Created`:**
-```
-(тело пустое)
-```
-
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON | `{ "message": "Неверный формат данных" }` |
-| `400` | `user_id == friend_id` | `{ "message": "Нельзя добавить себя в друзья" }` |
-| `400` | Заявка уже существует (unique violation) | `{ "message": "Запись о дружбе уже существует" }` |
-| `500` | Ошибка БД | *(пустое тело)* |
+Допустимые значения `status`: `"online"`, `"offline"`
 
 ---
 
-### `GET /friendship/pending?user_id=<id>` ✅ Реализовано
+### 3. Friendship
 
-Получить список входящих заявок в друзья (статус `pending`, где `friend_id = user_id`).
+#### `POST /friendship/` ✅
 
-**Аутентификация:** требуется (JWT)  
-**Query параметры:** `user_id` — ID текущего пользователя
+**Auth:** требуется (JWT)
 
-**Успешный ответ — `200 OK`:**
+**Body:**
+```json
+{ "user_id": 1, "friend_id": 2, "status": "pending" }
+```
+
+**Логика:**
+1. Проверить `user_id != friend_id`
+2. `INSERT INTO friendships (user_id, friend_id, status) VALUES (?, ?, 'pending')`
+3. Отправить WS-событие `friend_request` пользователю `friend_id` (если он онлайн)
+
+**Ответы:** `201` (создана), `400` (самодобавление / дублирует)
+
+---
+
+#### `GET /friendship/pending?user_id=<id>` ✅
+
+**Auth:** требуется (JWT)
+
+**Логика:** `WHERE friend_id = ? AND status = 'pending'` — использует `idx_friendships_friend_status`
+
+**Ответ `200`:**
 ```json
 [
   { "user_id": 7, "username": "bob" },
@@ -228,56 +452,45 @@ Authorization: Bearer <jwt_token>
 ]
 ```
 
-Возвращает пустой массив `[]` если заявок нет.
+---
 
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `user_id` не является числом | `{ "message": "Неверный формат user_id" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+#### `GET /friendship/pending/count?user_id=<id>` ✅
+
+**Auth:** требуется (JWT)
+
+**Ответ `200`:** `{ "count": 3 }`
 
 ---
 
-### `GET /friendship/pending/count?user_id=<id>` ✅ Реализовано
+#### `PATCH /friendship/:user_id/status` ❌ Sprint 1
 
-Получить количество входящих заявок.
+**Auth:** требуется (JWT — получатель заявки)  
+**Path:** `:user_id` — ID отправителя заявки
 
-**Аутентификация:** требуется (JWT)  
-**Query параметры:** `user_id` — ID текущего пользователя
-
-**Успешный ответ — `200 OK`:**
+**Body:**
 ```json
-{ "count": 3 }
+{ "status": "accepted" }
+```
+Допустимые значения: `"accepted"`, `"declined"`
+
+**Логика при `accepted`:**
+```
+BEGIN TRANSACTION
+  UPDATE friendships SET status='accepted'
+    WHERE user_id=:user_id AND friend_id=<из JWT> AND status='pending'
+  INSERT INTO friendships (user_id, friend_id, status)
+    VALUES (<из JWT>, :user_id, 'accepted')          -- симметричная запись
+COMMIT
+```
+После транзакции — автоматически создать чат (`POST /chat/` логика).
+
+**Логика при `declined`:**
+```
+DELETE FROM friendships
+  WHERE user_id=:user_id AND friend_id=<из JWT> AND status='pending'
 ```
 
-**Ошибки:** аналогично `GET /friendship/pending`
-
----
-
-### `PATCH /friendship/:user_id/status` ❌ Не реализовано
-
-Принять или отклонить входящую заявку от пользователя с ID `:user_id`.
-
-**Аутентификация:** требуется (JWT)  
-**Path параметры:** `user_id` — ID отправителя заявки
-
-**Тело запроса:**
-```json
-{
-  "status": "accepted"
-}
-```
-
-| Поле | Тип | Допустимые значения |
-|---|---|---|
-| `status` | string | `"accepted"` или `"declined"` |
-
-**Логика:**
-- Найти запись `WHERE user_id = :user_id AND friend_id = <из JWT> AND status = 'pending'`
-- Если статус `"accepted"` — обновить статус на `accepted`, создать обратную запись (`user_id = me, friend_id = :user_id, status = accepted`) для симметрии
-- Если статус `"declined"` — удалить запись (или обновить статус, если хранить историю)
-
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 { "message": "Заявка принята" }
 ```
@@ -287,27 +500,22 @@ Authorization: Bearer <jwt_token>
 ```
 
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON | `{ "message": "Неверный формат данных" }` |
-| `400` | Недопустимый статус (не accepted/declined) | `{ "message": "Недопустимый статус" }` |
-| `400` | `user_id` не число | `{ "message": "Неверный формат user_id" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `404` | Заявка не найдена | `{ "message": "Заявка не найдена" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+| Код | Условие |
+|---|---|
+| `400` | Недопустимый статус |
+| `404` | Заявка не найдена |
 
 ---
 
-### `GET /friendship/friends?user_id=<id>` ❌ Не реализовано
+#### `GET /friendship/friends` ❌ Sprint 1
 
-Получить список друзей (записи со статусом `accepted`).
+**Auth:** требуется (JWT — берёт user_id из токена)
 
-**Аутентификация:** требуется (JWT)  
-**Query параметры:** `user_id` — ID пользователя
+**Логика:** `WHERE user_id=<из JWT> AND status='accepted'` — использует `idx_friendships_user_status`
 
-**Логика:** выбрать все записи `WHERE (user_id = ? OR friend_id = ?) AND status = 'accepted'`, вернуть данные **другого** участника.
+> **Нет query параметра** `user_id` — берётся из JWT. Это безопасно и соответствует принципу "пользователь видит только своих друзей".
 
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 [
   { "id": 7, "username": "bob" },
@@ -315,30 +523,80 @@ Authorization: Bearer <jwt_token>
 ]
 ```
 
-Возвращает `[]` если друзей нет.
+---
+
+### 4. Chat
+
+#### `POST /chat/` ❌ Sprint 1
+
+**Auth:** требуется (JWT)
+
+**Body:**
+```json
+{ "friend_id": 7 }
+```
+
+**Логика:**
+1. Проверить, что `friend_id` — друг текущего пользователя (`status='accepted'`)
+2. Найти существующий DM-чат между ними:
+   ```sql
+   SELECT c.id FROM chats c
+   JOIN chat_members cm1 ON cm1.chat_id = c.id AND cm1.user_id = <me>
+   JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id = <friend_id>
+   LIMIT 1
+   ```
+3. Если есть — вернуть `200` с существующим
+4. Если нет — создать чат + добавить обоих в `chat_members`, вернуть `201`
+
+**Ответ `201` / `200`:**
+```json
+{
+  "id": 101,
+  "partner_id": 7,
+  "partner_name": "bob",
+  "last_message": null,
+  "last_message_at": null,
+  "unread_count": 0
+}
+```
 
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `user_id` не число | `{ "message": "Неверный формат user_id" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+| Код | Условие |
+|---|---|
+| `403` | `friend_id` не является другом |
 
 ---
 
-## 4. Chat — Чаты (Direct Messages)
+#### `GET /chat/` ❌ Sprint 1
 
-> Все эндпоинты этой группы ❌ Не реализованы.
+**Auth:** требуется (JWT — берёт user_id из токена)
 
-### `GET /chat/`
+**Логика:**
+```sql
+SELECT
+  c.id,
+  u.id          AS partner_id,
+  u.username    AS partner_name,
+  c.last_message_content AS last_message,
+  c.last_message_at,
+  COALESCE(
+    (SELECT COUNT(*) FROM messages m
+     WHERE m.chat_id = c.id
+       AND m.id > COALESCE(crc.last_read_message_id, 0)
+       AND m.deleted_at IS NULL),
+    0
+  )             AS unread_count
+FROM chats c
+JOIN chat_members cm  ON cm.chat_id = c.id AND cm.user_id = <me>
+JOIN chat_members cm2 ON cm2.chat_id = c.id AND cm2.user_id != <me>
+JOIN users u          ON u.id = cm2.user_id AND u.deleted_at IS NULL
+LEFT JOIN chat_read_cursor crc ON crc.chat_id = c.id AND crc.user_id = <me>
+ORDER BY c.last_message_at DESC NULLS LAST
+```
 
-Получить список чатов текущего пользователя.
+`last_message_*` колонки в `chats` устраняют субзапрос на каждый чат.
 
-**Аутентификация:** требуется (JWT — берёт `user_id` из токена)
-
-**Логика:** `SELECT` из `chat_members JOIN chats JOIN users` — найти все чаты, в которых участвует текущий пользователь, и вернуть данные партнёра + превью последнего сообщения.
-
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 [
   {
@@ -346,98 +604,36 @@ Authorization: Bearer <jwt_token>
     "partner_id": 7,
     "partner_name": "bob",
     "last_message": "Привет!",
-    "last_message_at": "2026-05-02T14:30:00Z"
-  },
-  {
-    "id": 102,
-    "partner_id": 15,
-    "partner_name": "charlie",
-    "last_message": null,
-    "last_message_at": null
+    "last_message_at": "2026-05-02T14:30:00Z",
+    "unread_count": 3
   }
 ]
 ```
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `id` | number | ID чата |
-| `partner_id` | number | ID собеседника |
-| `partner_name` | string | Username собеседника |
-| `last_message` | string\|null | Текст последнего сообщения |
-| `last_message_at` | string\|null | ISO 8601 timestamp последнего сообщения |
-
-Возвращает `[]` если чатов нет.
-
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
-
 ---
 
-### `POST /chat/`
+### 5. Messages
 
-Создать DM-чат с другом. Если чат уже существует — вернуть существующий.
+#### `GET /chat/:id/messages` ❌ Sprint 3
 
-**Аутентификация:** требуется (JWT)
-
-**Тело запроса:**
-```json
-{
-  "friend_id": 7
-}
-```
-
-**Логика:**
-1. Проверить, что `friend_id` является другом текущего пользователя (статус `accepted`)
-2. Проверить, нет ли уже чата между ними
-3. Если есть — вернуть существующий `200 OK`
-4. Если нет — создать чат + добавить обоих в `chat_members`, вернуть `201 Created`
-
-**Успешный ответ — `201 Created` (новый)** или **`200 OK` (уже существует):**
-```json
-{
-  "id": 101,
-  "partner_id": 7,
-  "partner_name": "bob",
-  "last_message": null,
-  "last_message_at": null
-}
-```
-
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON | `{ "message": "Неверный формат данных" }` |
-| `400` | `friend_id` не указан | `{ "message": "Не указан friend_id" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `403` | Пользователь не является другом | `{ "message": "Можно создать чат только с другом" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
-
----
-
-## 5. Messages — Сообщения
-
-> Все эндпоинты этой группы ❌ Не реализованы.
-
-### `GET /chat/:id/messages`
-
-Получить историю сообщений чата с cursor-based пагинацией.
-
-**Аутентификация:** требуется (JWT)  
-**Path параметры:** `id` — ID чата  
-**Query параметры:**
-| Параметр | Тип | Дефолт | Описание |
+**Auth:** требуется (JWT)  
+**Path:** `id` — ID чата  
+**Query:**
+| Параметр | Тип | Default | Описание |
 |---|---|---|---|
-| `limit` | number | 50 | Кол-во сообщений |
-| `before` | number | — | ID сообщения — вернуть сообщения **старше** него (для подгрузки истории вверх) |
+| `limit` | number | `50` | Кол-во сообщений |
+| `before` | number | — | Вернуть сообщения с `id < before` (подгрузка истории вверх) |
 
 **Логика:**
-- `WHERE chat_id = ? [AND id < ?before] ORDER BY id DESC LIMIT ?limit`
-- Затем реверс массива, чтобы вернуть в хронологическом порядке
+```sql
+WHERE chat_id = ? [AND id < ?before] AND deleted_at IS NULL
+ORDER BY id DESC
+LIMIT ?limit
+-- Использует idx_messages_chat_id → Index Range Scan
+```
+Результат реверсировать перед отдачей (хронологический порядок).
 
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 [
   {
@@ -446,97 +642,298 @@ Authorization: Bearer <jwt_token>
     "sender_id": 42,
     "content": "Привет!",
     "type": "text",
-    "created_at": "2026-05-02T14:25:00Z"
-  },
-  {
-    "id": 1002,
-    "chat_id": 101,
-    "sender_id": 7,
-    "content": "Привет! Как дела?",
-    "type": "text",
-    "created_at": "2026-05-02T14:26:00Z"
+    "reply_to_id": null,
+    "created_at": "2026-05-02T14:25:00Z",
+    "edited_at": null
   }
 ]
 ```
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `id` | number | ID сообщения |
-| `chat_id` | number | ID чата |
-| `sender_id` | number | ID отправителя |
-| `content` | string | Текст сообщения |
-| `type` | string | `"text"` \| `"image"` \| `"voice"` \| `"file"` |
-| `created_at` | string | ISO 8601 |
-
-Возвращает `[]` если сообщений нет.
-
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `id` чата не число | `{ "message": "Неверный формат данных" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `403` | Пользователь не участник чата | `{ "message": "Нет доступа к этому чату" }` |
-| `404` | Чат не найден | `{ "message": "Чат не найден" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+| Код | Условие |
+|---|---|
+| `403` | Текущий пользователь не участник чата |
+| `404` | Чат не найден |
 
 ---
 
-### `POST /chat/:id/messages`
+#### `POST /chat/:id/messages` ❌ Sprint 3
 
-Отправить сообщение в чат.
+**Auth:** требуется (JWT — берёт sender_id из токена)
 
-**Аутентификация:** требуется (JWT — берёт `sender_id` из токена)  
-**Path параметры:** `id` — ID чата
-
-**Тело запроса:**
+**Body:**
 ```json
-{
-  "content": "Привет! Как дела?",
-  "type": "text"
-}
+{ "content": "Привет!", "type": "text" }
 ```
+Поле `type`: `"text"` | `"image"` | `"voice"` | `"file"` (default: `"text"`)
 
-| Поле | Тип | Дефолт | Описание |
-|---|---|---|---|
-| `content` | string | — | Текст сообщения |
-| `type` | string | `"text"` | Тип сообщения |
+**Логика:**
+1. Проверить, что текущий пользователь — участник чата
+2. `INSERT INTO messages`
+3. `UPDATE chats SET last_message_id=?, last_message_at=?, last_message_content=?`
+4. `UPSERT chat_read_cursor` — обновить курсор прочтения отправителя
+5. Broadcast WS-событие `message` всем участникам чата через Hub
 
-**Успешный ответ — `201 Created`:**
+**Ответ `201`:**
 ```json
 {
   "id": 1003,
   "chat_id": 101,
   "sender_id": 42,
-  "content": "Привет! Как дела?",
+  "content": "Привет!",
   "type": "text",
-  "created_at": "2026-05-02T14:30:00Z"
+  "reply_to_id": null,
+  "created_at": "2026-05-02T14:30:00Z",
+  "edited_at": null
 }
 ```
 
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON или пустой `content` | `{ "message": "Неверный формат данных" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `403` | Не участник чата | `{ "message": "Нет доступа к этому чату" }` |
-| `404` | Чат не найден | `{ "message": "Чат не найден" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+---
 
-> **После сохранения в БД** — сообщение нужно транслировать через WebSocket Hub всем участникам чата (событие `"message"`). Это часть Phase 1.2.
+### 6. WebSocket
+
+#### `GET /ws?token=<jwt>` ❌ Sprint 2
+
+WebSocket upgrade. Токен передаётся в query-параметре (HTTP заголовки после upgrade недоступны).
+
+**После подключения:**
+1. Валидировать JWT из query
+2. Привязать соединение к `user_id`
+3. Зарегистрировать клиента в Hub
+4. Установить `SETEX presence:{user_id} 60 "online"` (Фаза 2)
+5. Запустить readPump + writePump goroutines
+
+**При отключении:**
+1. Удалить клиента из Hub
+2. `DEL presence:{user_id}` (Фаза 2)
+3. Broadcast `presence: offline` друзьям (Фаза 2)
+
+**Ping/Pong:** сервер шлёт Ping каждые 30 сек, ждёт Pong 10 сек, иначе закрывает соединение.
 
 ---
 
-## 6. Voice Rooms — Голосовые комнаты
+#### Формат всех WS-сообщений
 
-> Все эндпоинты этой группы ❌ Не реализованы.
+```json
+{ "type": "<event_type>", "payload": { ... } }
+```
 
-### `GET /voice-room/`
+---
 
-Получить список активных голосовых комнат.
+#### События сервер → клиент
 
-**Аутентификация:** требуется (JWT)
+**`message`** — новое сообщение в чате
+```json
+{
+  "type": "message",
+  "payload": {
+    "id": 1003,
+    "chat_id": 101,
+    "sender_id": 7,
+    "content": "Привет!",
+    "type": "text",
+    "reply_to_id": null,
+    "created_at": "2026-05-02T14:30:00Z"
+  }
+}
+```
 
-**Успешный ответ — `200 OK`:**
+**`typing`** — пользователь печатает
+```json
+{
+  "type": "typing",
+  "payload": { "chat_id": 101, "user_id": 7, "is_typing": true }
+}
+```
+
+**`read`** — сообщение прочитано
+```json
+{
+  "type": "read",
+  "payload": { "chat_id": 101, "last_read_message_id": 1003, "user_id": 7 }
+}
+```
+> Используем `last_read_message_id`, а не `message_id` — соответствует `chat_read_cursor`.
+
+**`presence`** — изменился статус онлайн
+```json
+{
+  "type": "presence",
+  "payload": { "user_id": 7, "status": "online" }
+}
+```
+Допустимые значения `status`: `"online"`, `"offline"`
+
+**`friend_request`** — новая заявка в друзья
+```json
+{
+  "type": "friend_request",
+  "payload": { "from_user_id": 7, "username": "bob" }
+}
+```
+
+**`room_update`** — изменился состав голосовой комнаты
+```json
+{
+  "type": "room_update",
+  "payload": { "room_id": 1, "user_id": 99, "username": "alice", "action": "join" }
+}
+```
+Допустимые значения `action`: `"join"`, `"leave"`
+
+**`reaction`** — реакция на сообщение (Фаза 2)
+```json
+{
+  "type": "reaction",
+  "payload": { "message_id": 1001, "user_id": 7, "emoji": "👍", "action": "add" }
+}
+```
+Допустимые значения `action`: `"add"`, `"remove"`
+
+---
+
+#### События клиент → сервер
+
+**Typing indicator:**
+```json
+{ "type": "typing", "payload": { "chat_id": 101, "is_typing": true } }
+```
+Клиент шлёт при каждом нажатии клавиши (дебounce 1 сек на клиенте).
+
+**Отметить прочитанным:**
+```json
+{ "type": "read", "payload": { "chat_id": 101, "message_id": 1003 } }
+```
+Сервер делает `UPSERT chat_read_cursor`, затем broadcast `read` участникам чата.
+
+---
+
+#### Hub — реализация (Go)
+
+```go
+// internal/hub/hub.go
+
+type Hub struct {
+    clients    map[uint]*Client  // userID → Client
+    mu         sync.RWMutex
+    broadcast  chan HubMessage
+    register   chan *Client
+    unregister chan *Client
+}
+
+type HubMessage struct {
+    ToUserID uint
+    Message  []byte
+}
+
+func (h *Hub) Run() {
+    for {
+        select {
+        case client := <-h.register:
+            h.mu.Lock()
+            h.clients[client.UserID] = client
+            h.mu.Unlock()
+        case client := <-h.unregister:
+            h.mu.Lock()
+            delete(h.clients, client.UserID)
+            h.mu.Unlock()
+        case msg := <-h.broadcast:
+            h.mu.RLock()
+            if client, ok := h.clients[msg.ToUserID]; ok {
+                client.send <- msg.Message
+            }
+            h.mu.RUnlock()
+        }
+    }
+}
+```
+
+**Фаза 2 — Redis Pub/Sub:**  
+При broadcast вместо прямой отправки → `redis.Publish("user:{userID}", message)`.  
+Каждый инстанс Go подписан на `user:*` и пушит своим локальным клиентам.
+
+---
+
+## Фаза 2 — Реакции и присутствие
+
+### `POST /message/:id/reaction` ❌ Sprint 6
+
+**Auth:** требуется (JWT)
+
+**Body:**
+```json
+{ "emoji": "👍" }
+```
+
+**Логика — toggle:**
+```sql
+-- Если реакция уже есть → DELETE (убрать)
+-- Если нет → INSERT (добавить)
+```
+После изменения — broadcast WS-событие `reaction` участникам чата.
+
+**Ответ `200`:**
+```json
+{ "action": "add", "emoji": "👍", "message_id": 1001 }
+```
+
+---
+
+### Rate Limiting (middleware) ❌ Sprint 6
+
+Redis-based token bucket на каждого пользователя/IP:
+
+| Эндпоинт | Лимит |
+|---|---|
+| `POST /chat/:id/messages` | 60 сообщений / мин на user |
+| `POST /auth/*` | 10 запросов / мин на IP |
+| `POST /friendship/` | 20 заявок / час на user |
+
+Ответ при превышении: `429 Too Many Requests`  
+Заголовок: `Retry-After: <seconds>`
+
+---
+
+## Фаза 3 — Медиафайлы
+
+### `POST /upload` ❌ Sprint 7
+
+**Auth:** требуется (JWT)  
+**Content-Type:** `multipart/form-data`
+
+**Поля формы:**
+| Поле | Описание |
+|---|---|
+| `file` | Файл (max 10 MB) |
+| `type` | `"image"` \| `"voice"` \| `"file"` |
+
+**Логика:**
+1. Валидировать размер (≤ 10 MB) и MIME-type
+2. Для `image`: сжать до max 1920px, JPEG 85%, создать thumbnail 200×200
+3. Сохранить в MinIO (bucket `cove-media`)
+4. Вернуть URL
+
+**Ответ `201`:**
+```json
+{
+  "url": "https://media.cove.app/cove-media/images/2026/05/abc123.jpg",
+  "thumbnail_url": "https://media.cove.app/cove-media/thumbs/2026/05/abc123.jpg",
+  "type": "image",
+  "size": 245678
+}
+```
+
+Клиент после загрузки вызывает `POST /chat/:id/messages` с `type="image"` и `content=<url>`.
+
+---
+
+## Фаза 4 — Голосовые комнаты
+
+### `GET /voice-room/` ❌ Sprint 8
+
+**Auth:** требуется (JWT)
+
+**Ответ `200`:**
 ```json
 [
   {
@@ -552,86 +949,54 @@ Authorization: Bearer <jwt_token>
 ]
 ```
 
-| Поле | Тип | Описание |
-|---|---|---|
-| `id` | number | ID комнаты |
-| `name` | string | Название комнаты |
-| `created_by` | number | ID создателя |
-| `is_active` | bool | Активна ли комната |
-| `members` | array | Текущие участники |
-| `members[].user_id` | number | ID участника |
-| `members[].username` | string | Username участника |
-| `members[].is_muted` | bool | Замьючен ли участник |
-
-Возвращает `[]` если нет активных комнат.
-
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
-
 ---
 
-### `POST /voice-room/`
+### `POST /voice-room/` ❌ Sprint 8
 
-Создать новую голосовую комнату и автоматически войти в неё.
+**Auth:** требуется (JWT)
 
-**Аутентификация:** требуется (JWT)
-
-**Тело запроса:**
+**Body:**
 ```json
-{
-  "name": "Вечерний чилл"
-}
+{ "name": "Вечерний чилл" }
 ```
 
-**Успешный ответ — `201 Created`:**
+**Логика:**
+1. `INSERT INTO voice_rooms`
+2. `INSERT INTO room_members` (создатель автоматически входит)
+3. Выдать LiveKit token для создателя (ему нужно подключиться к SFU)
+
+**Ответ `201`:**
 ```json
 {
   "id": 2,
   "name": "Вечерний чилл",
   "created_by": 42,
   "is_active": true,
+  "livekit_token": "eyJhbGci...",
   "members": [
     { "user_id": 42, "username": "alice", "is_muted": false }
   ]
 }
 ```
 
-Создатель автоматически добавляется в `room_members`.
-
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | Невалидный JSON или пустое `name` | `{ "message": "Неверный формат данных" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
-
 ---
 
-### `POST /voice-room/:id/join`
+### `POST /voice-room/:id/join` ❌ Sprint 8
 
-Присоединиться к голосовой комнате.
-
-**Аутентификация:** требуется (JWT)  
-**Path параметры:** `id` — ID комнаты
-
-**Тело запроса:** пустое
+**Auth:** требуется (JWT)
 
 **Логика:**
-1. Проверить, что комната активна
-2. Добавить пользователя в `room_members` (upsert — если уже есть, не падать)
-3. Вернуть полный объект комнаты с текущим списком участников
-4. Разослать через WebSocket событие `room_update` всем участникам комнаты
+1. Проверить, что комната активна (`is_active = true`)
+2. `UPSERT room_members` (если уже внутри — не падать)
+3. Выдать LiveKit token для участника
+4. Broadcast WS-событие `room_update` всем участникам
 
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 {
   "id": 1,
   "name": "Общая комната",
-  "created_by": 42,
-  "is_active": true,
+  "livekit_token": "eyJhbGci...",
   "members": [
     { "user_id": 42, "username": "alice", "is_muted": false },
     { "user_id": 7,  "username": "bob",   "is_muted": false },
@@ -641,263 +1006,152 @@ Authorization: Bearer <jwt_token>
 ```
 
 **Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `id` не число | `{ "message": "Неверный формат данных" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `404` | Комната не найдена | `{ "message": "Комната не найдена" }` |
-| `410` | Комната неактивна (все вышли) | `{ "message": "Комната уже закрыта" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
+| Код | Условие |
+|---|---|
+| `404` | Комната не найдена |
+| `410` | Комната неактивна (все вышли) |
 
 ---
 
-### `POST /voice-room/:id/leave`
+### `POST /voice-room/:id/leave` ❌ Sprint 8
 
-Покинуть голосовую комнату.
-
-**Аутентификация:** требуется (JWT)  
-**Path параметры:** `id` — ID комнаты
-
-**Тело запроса:** пустое
+**Auth:** требуется (JWT)
 
 **Логика:**
-1. Удалить пользователя из `room_members`
-2. Если участников не осталось — установить `is_active = false` на комнате
-3. Разослать через WebSocket событие `room_update` оставшимся участникам
+1. `DELETE FROM room_members WHERE room_id=? AND user_id=<из JWT>`
+2. Если участников не осталось → `UPDATE voice_rooms SET is_active=false`
+3. Broadcast WS-событие `room_update` оставшимся участникам
 
-**Успешный ответ — `200 OK`:**
+**Ответ `200`:**
 ```json
 { "message": "Вы покинули комнату" }
 ```
 
-**Ошибки:**
-| Код | Условие | Тело |
-|---|---|---|
-| `400` | `id` не число | `{ "message": "Неверный формат данных" }` |
-| `401` | Нет токена | `{ "message": "Необходима авторизация" }` |
-| `404` | Комната не найдена | `{ "message": "Комната не найдена" }` |
-| `500` | Ошибка БД | `{ "message": "Ошибка сервера" }` |
-
 ---
 
-## 7. WebSocket — Реал-тайм события
+## Фаза 5 — Production-ready
 
-> ❌ Не реализовано. Планируется в Phase 1.2.
+### `GET /healthz` ❌
 
-### `GET /ws?token=<jwt>`
+**Auth:** не требуется
 
-WebSocket upgrade. Аутентификация через query-параметр `token`.
+**Логика:** проверить соединение с PostgreSQL (`db.Ping()`) и Redis.
 
-**После подключения** — сервер привязывает соединение к `user_id` из JWT и регистрирует клиента в Hub.
-
-### Формат сообщений
-
-Все сообщения — JSON с обёрткой `type` + `payload`:
-
+**Ответ `200`:**
 ```json
-{ "type": "<event_type>", "payload": { ... } }
+{ "status": "ok", "postgres": "ok", "redis": "ok" }
 ```
 
-### Типы событий (сервер → клиент)
-
-#### `message` — новое сообщение в чате
+**Ответ `503`:**
 ```json
-{
-  "type": "message",
-  "payload": {
-    "id": 1003,
-    "chat_id": 101,
-    "sender_id": 7,
-    "content": "Привет!",
-    "type": "text",
-    "created_at": "2026-05-02T14:30:00Z"
-  }
-}
-```
-
-#### `typing` — пользователь печатает
-```json
-{
-  "type": "typing",
-  "payload": {
-    "chat_id": 101,
-    "user_id": 7,
-    "is_typing": true
-  }
-}
-```
-
-#### `read` — сообщение прочитано
-```json
-{
-  "type": "read",
-  "payload": {
-    "chat_id": 101,
-    "message_id": 1003,
-    "user_id": 7
-  }
-}
-```
-
-#### `presence` — изменился статус онлайн
-```json
-{
-  "type": "presence",
-  "payload": {
-    "user_id": 7,
-    "status": "online"
-  }
-}
-```
-Допустимые значения `status`: `"online"`, `"offline"`
-
-#### `friend_request` — новая заявка в друзья
-```json
-{
-  "type": "friend_request",
-  "payload": {
-    "from_user_id": 7,
-    "username": "bob"
-  }
-}
-```
-
-#### `room_update` — изменился состав голосовой комнаты
-```json
-{
-  "type": "room_update",
-  "payload": {
-    "room_id": 1,
-    "user_id": 99,
-    "username": "new_user",
-    "action": "join"
-  }
-}
-```
-Допустимые значения `action`: `"join"`, `"leave"`
-
-### Типы событий (клиент → сервер)
-
-#### Инициировать typing indicator
-```json
-{
-  "type": "typing",
-  "payload": { "chat_id": 101, "is_typing": true }
-}
-```
-
-#### Отметить сообщение прочитанным
-```json
-{
-  "type": "read",
-  "payload": { "chat_id": 101, "message_id": 1003 }
-}
+{ "status": "degraded", "postgres": "ok", "redis": "error" }
 ```
 
 ---
 
-## 8. Схема базы данных (целевая)
+### `GET /metrics` ❌ (Фаза 5)
 
-```sql
--- Уже существует (частично)
-users (
-  id           SERIAL PRIMARY KEY,
-  username     VARCHAR(50) UNIQUE NOT NULL,
-  password_hash BYTEA NOT NULL,
-  created_at   TIMESTAMP DEFAULT NOW(),
-  deleted_at   TIMESTAMP
-)
+Prometheus-совместимый формат. Метрики:
+- `cove_http_requests_total` — RPS по эндпоинтам
+- `cove_http_request_duration_seconds` — латентность
+- `cove_ws_connections_active` — активные WebSocket соединения
+- `cove_hub_broadcast_queue_length` — размер очереди Hub
+- `cove_messages_sent_total` — всего отправлено сообщений
 
-friendships (
-  user_id    INTEGER REFERENCES users(id),
-  friend_id  INTEGER REFERENCES users(id),
-  status     VARCHAR(20) NOT NULL,  -- pending | accepted | declined
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (user_id, friend_id)
-)
+---
 
--- Нужно создать (Phase 1.3)
-chats (
-  id         SERIAL PRIMARY KEY,
-  created_at TIMESTAMP DEFAULT NOW()
-)
+## Connection Pool (cmd/main.go)
 
-chat_members (
-  chat_id  INTEGER REFERENCES chats(id),
-  user_id  INTEGER REFERENCES users(id),
-  PRIMARY KEY (chat_id, user_id)
-)
-
-messages (
-  id          SERIAL PRIMARY KEY,
-  chat_id     INTEGER REFERENCES chats(id),
-  sender_id   INTEGER REFERENCES users(id),
-  content     TEXT NOT NULL,
-  type        VARCHAR(20) DEFAULT 'text',
-  reply_to_id INTEGER REFERENCES messages(id),  -- Phase 2
-  created_at  TIMESTAMP DEFAULT NOW(),
-  edited_at   TIMESTAMP,
-  deleted_at  TIMESTAMP
-)
-
--- Phase 3
-voice_rooms (
-  id         SERIAL PRIMARY KEY,
-  name       VARCHAR(100) NOT NULL,
-  created_by INTEGER REFERENCES users(id),
-  is_active  BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT NOW()
-)
-
-room_members (
-  room_id   INTEGER REFERENCES voice_rooms(id),
-  user_id   INTEGER REFERENCES users(id),
-  is_muted  BOOLEAN DEFAULT FALSE,
-  joined_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (room_id, user_id)
-)
-
--- Phase 2
-reactions (
-  message_id INTEGER REFERENCES messages(id),
-  user_id    INTEGER REFERENCES users(id),
-  emoji      VARCHAR(10) NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (message_id, user_id, emoji)
-)
-
-read_status (
-  message_id INTEGER REFERENCES messages(id),
-  user_id    INTEGER REFERENCES users(id),
-  read_at    TIMESTAMP DEFAULT NOW(),
-  PRIMARY KEY (message_id, user_id)
-)
+```go
+// Сразу после gorm.Open():
+sqlDB, err := db.DB()
+if err != nil {
+    log.Fatalf("Failed to get sql.DB: %v", err)
+}
+sqlDB.SetMaxOpenConns(25)            // не перегружать PostgreSQL
+sqlDB.SetMaxIdleConns(5)
+sqlDB.SetConnMaxLifetime(5 * time.Minute)
 ```
 
 ---
 
-## 9. Сводная таблица эндпоинтов
+## Сводная таблица эндпоинтов
 
-| Метод | Path | Auth | Статус |
-|---|---|---|---|
-| `POST` | `/auth/register` | ❌ | ✅ Реализовано |
-| `POST` | `/auth/login` | ❌ | ✅ Реализовано |
-| `GET` | `/user/search?q=` | ❌ | ✅ Реализовано |
-| `GET` | `/user/username/:username` | ❌ | ✅ Реализовано |
-| `GET` | `/user/:id` | ❌ | ✅ Реализовано |
-| `POST` | `/friendship/` | ✅ | ✅ Реализовано |
-| `GET` | `/friendship/pending?user_id=` | ✅ | ✅ Реализовано |
-| `GET` | `/friendship/pending/count?user_id=` | ✅ | ✅ Реализовано |
-| `PATCH` | `/friendship/:user_id/status` | ✅ | ❌ Нужно сделать |
-| `GET` | `/friendship/friends?user_id=` | ✅ | ❌ Нужно сделать |
-| `GET` | `/chat/` | ✅ | ❌ Нужно сделать |
-| `POST` | `/chat/` | ✅ | ❌ Нужно сделать |
-| `GET` | `/chat/:id/messages` | ✅ | ❌ Нужно сделать |
-| `POST` | `/chat/:id/messages` | ✅ | ❌ Нужно сделать |
-| `GET` | `/voice-room/` | ✅ | ❌ Нужно сделать |
-| `POST` | `/voice-room/` | ✅ | ❌ Нужно сделать |
-| `POST` | `/voice-room/:id/join` | ✅ | ❌ Нужно сделать |
-| `POST` | `/voice-room/:id/leave` | ✅ | ❌ Нужно сделать |
-| `GET` | `/ws?token=` | (в URL) | ❌ Нужно сделать |
+| Метод | Path | Auth | Фаза | Статус |
+|---|---|---|---|---|
+| `POST` | `/auth/register` | ❌ | 1 | ✅ |
+| `POST` | `/auth/login` | ❌ | 1 | ✅ |
+| `POST` | `/auth/refresh` | ❌ | 5 | ❌ |
+| `GET` | `/user/search?q=` | ❌ | 1 | ✅ |
+| `GET` | `/user/username/:username` | ❌ | 1 | ✅ |
+| `GET` | `/user/:id` | ❌ | 1 | ✅ |
+| `GET` | `/user/:id/presence` | ✅ | 2 | ❌ |
+| `POST` | `/friendship/` | ✅ | 1 | ✅ |
+| `GET` | `/friendship/pending` | ✅ | 1 | ✅ |
+| `GET` | `/friendship/pending/count` | ✅ | 1 | ✅ |
+| `PATCH` | `/friendship/:user_id/status` | ✅ | 1 | ❌ Sprint 1 |
+| `GET` | `/friendship/friends` | ✅ | 1 | ❌ Sprint 1 |
+| `POST` | `/chat/` | ✅ | 1 | ❌ Sprint 1 |
+| `GET` | `/chat/` | ✅ | 1 | ❌ Sprint 1 |
+| `GET` | `/chat/:id/messages` | ✅ | 1 | ❌ Sprint 3 |
+| `POST` | `/chat/:id/messages` | ✅ | 1 | ❌ Sprint 3 |
+| `POST` | `/message/:id/reaction` | ✅ | 2 | ❌ Sprint 6 |
+| `POST` | `/upload` | ✅ | 3 | ❌ Sprint 7 |
+| `GET` | `/voice-room/` | ✅ | 4 | ❌ Sprint 8 |
+| `POST` | `/voice-room/` | ✅ | 4 | ❌ Sprint 8 |
+| `POST` | `/voice-room/:id/join` | ✅ | 4 | ❌ Sprint 8 |
+| `POST` | `/voice-room/:id/leave` | ✅ | 4 | ❌ Sprint 8 |
+| `GET` | `/ws?token=` | (URL) | 1 | ❌ Sprint 2 |
+| `GET` | `/healthz` | ❌ | 5 | ❌ |
+| `GET` | `/metrics` | ❌ | 5 | ❌ |
 
-**Итого:** 8 реализовано, 11 нужно сделать.
+**Итого:** 8 реализовано, 17 нужно сделать.
+
+---
+
+## Порядок реализации
+
+```
+Sprint 1 (приоритет сейчас)
+├── Миграции 003–005 (индексы, chats, messages, chat_read_cursor)
+├── PATCH /friendship/:user_id/status  — принять/отклонить + симм. записи
+├── GET  /friendship/friends
+├── POST /chat/  — создать DM
+└── GET  /chat/  — список чатов
+
+Sprint 2
+├── internal/hub/  — Hub, Client, WsMessage
+├── GET /ws?token= — WebSocket upgrade
+└── WS-событие friend_request при создании заявки
+
+Sprint 3
+├── GET  /chat/:id/messages — история с пагинацией
+├── POST /chat/:id/messages — отправить + broadcast
+├── WS typing indicator
+└── WS read + UPSERT chat_read_cursor
+
+Sprint 4–5 (Фаза 2)
+├── Distributed Hub через Redis Pub/Sub
+├── Presence система (Redis SET TTL)
+├── GET /user/:id/presence
+└── Rate limiting middleware
+
+Sprint 6 (Фаза 2)
+├── Миграция 007 (reactions)
+└── POST /message/:id/reaction + WS reaction
+
+Sprint 7 (Фаза 3)
+└── POST /upload — MinIO, сжатие изображений
+
+Sprints 8–11 (Фаза 4)
+├── Миграция 006 (voice_rooms, room_members)
+├── GET/POST /voice-room/
+├── POST /voice-room/:id/join — LiveKit token
+└── POST /voice-room/:id/leave
+
+Sprints 12–14 (Фаза 5)
+├── POST /auth/refresh — refresh tokens
+├── GET /healthz
+├── GET /metrics — Prometheus
+└── Connection pool tuning
+```
