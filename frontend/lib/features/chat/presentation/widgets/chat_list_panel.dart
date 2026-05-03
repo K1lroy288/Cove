@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/auth_notifier.dart';
+import '../../../friends/data/models/friend.dart';
 import '../../../user/data/models/friend_request.dart';
 import '../../../user/data/models/user_dto.dart';
 import '../../data/models/chat.dart';
@@ -35,6 +36,9 @@ class _ChatListPanelState extends State<ChatListPanel> {
   int get _pendingRequestsCount => _pendingRequests.length;
   final Set<int> _respondingIds = {};
 
+  List<Friend> _friends = [];
+  final Set<int> _sentRequestIds = {};
+
   bool get _hasQuery => _searchController.text.trim().isNotEmpty;
 
   @override
@@ -42,6 +46,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     super.initState();
     _loadChats();
     _loadPendingRequests();
+    _loadFriends();
   }
 
   @override
@@ -72,6 +77,16 @@ class _ChatListPanelState extends State<ChatListPanel> {
       token: auth.token!,
     );
     if (mounted) setState(() => _pendingRequests = requests);
+  }
+
+  Future<void> _loadFriends() async {
+    final auth = context.read<AuthNotifier>();
+    if (auth.userId == null || auth.token == null) return;
+    final friends = await _api.getFriends(
+      userId: auth.userId!,
+      token: auth.token!,
+    );
+    if (mounted) setState(() => _friends = friends);
   }
 
   Future<void> _handleSearch(String query) async {
@@ -131,7 +146,10 @@ class _ChatListPanelState extends State<ChatListPanel> {
     );
 
     if (!mounted) return;
-    setState(() => _isSendingRequest = false);
+    setState(() {
+      _isSendingRequest = false;
+      if (success) _sentRequestIds.add(friend.id);
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -332,6 +350,39 @@ class _ChatListPanelState extends State<ChatListPanel> {
   }
 
   Widget _buildUserResultCard(UserDTO user) {
+    final isAlreadyFriend = _friends.any((f) => f.id == user.id);
+    final hasIncomingRequest = _pendingRequests.any((r) => r.userId == user.id);
+    final hasSentRequest = _sentRequestIds.contains(user.id);
+
+    final String subtitle;
+    final Widget trailing;
+
+    if (isAlreadyFriend) {
+      subtitle = "Уже в друзьях";
+      trailing = const Icon(Icons.check, color: Colors.greenAccent);
+    } else if (hasIncomingRequest) {
+      subtitle = "Прислал вам заявку";
+      trailing = const Icon(Icons.mail_outline, color: Colors.amber);
+    } else if (hasSentRequest) {
+      subtitle = "Запрос отправлен";
+      trailing = const Icon(Icons.schedule, color: Colors.white38);
+    } else if (_isSendingRequest) {
+      subtitle = "Нажмите, чтобы добавить";
+      trailing = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+            strokeWidth: 2, color: AppTheme.accentIndigo),
+      );
+    } else {
+      subtitle = "Нажмите, чтобы добавить";
+      trailing = IconButton(
+        icon: const Icon(Icons.person_add_outlined,
+            color: AppTheme.accentIndigo),
+        onPressed: () => _handleAddFriend(user),
+      );
+    }
+
     return ListTile(
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -346,20 +397,9 @@ class _ChatListPanelState extends State<ChatListPanel> {
       ),
       title: Text(user.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text("Нажмите, чтобы добавить",
-          style: TextStyle(color: Colors.white38, fontSize: 12)),
-      trailing: _isSendingRequest
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppTheme.accentIndigo),
-            )
-          : IconButton(
-              icon: const Icon(Icons.person_add_outlined,
-                  color: AppTheme.accentIndigo),
-              onPressed: () => _handleAddFriend(user),
-            ),
+      subtitle: Text(subtitle,
+          style: const TextStyle(color: Colors.white38, fontSize: 12)),
+      trailing: trailing,
     );
   }
 

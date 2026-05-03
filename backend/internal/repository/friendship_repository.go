@@ -44,19 +44,30 @@ func (r *FriendshipRepository) GetPendingRequests(userID uint) ([]dto.FriendRequ
 // receiverID — текущий пользователь (friend_id в таблице friendships).
 func (r *FriendshipRepository) RespondToFriendRequest(senderID, receiverID uint, status string) error {
 	if status == "accepted" {
-		result := r.DB.Model(&model.Friendship{}).
-			Where("user_id = ? AND friend_id = ? AND status = ?", senderID, receiverID, model.StatusPending).
-			Update("status", model.StatusAccepted)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return errors.New("request not found")
-		}
-		return nil
+		return r.DB.Transaction(func(tx *gorm.DB) error {
+			// Обновить исходную заявку: (senderID → receiverID) pending → accepted
+			result := tx.Model(&model.Friendship{}).
+				Where("user_id = ? AND friend_id = ? AND status = ?", senderID, receiverID, model.StatusPending).
+				Update("status", model.StatusAccepted)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errors.New("request not found")
+			}
+
+			// Создать симметричную запись: (receiverID → senderID) accepted
+			// Благодаря этому GetFriends делает простой WHERE user_id=? AND status='accepted'
+			reverse := &model.Friendship{
+				UserID:   receiverID,
+				FriendID: senderID,
+				Status:   model.StatusAccepted,
+			}
+			return tx.Create(reverse).Error
+		})
 	}
 
-	// declined → удалить запись
+	// declined → удалить заявку
 	result := r.DB.
 		Where("user_id = ? AND friend_id = ? AND status = ?", senderID, receiverID, model.StatusPending).
 		Delete(&model.Friendship{})
@@ -69,20 +80,15 @@ func (r *FriendshipRepository) RespondToFriendRequest(senderID, receiverID uint,
 	return nil
 }
 
-// GetFriends возвращает список друзей пользователя (status = accepted, оба направления).
+// GetFriends возвращает список друзей пользователя.
+// Работает корректно благодаря симметричным записям: при принятии заявки
+// создаются обе строки (A→B и B→A), поэтому достаточно WHERE user_id=?.
 func (r *FriendshipRepository) GetFriends(userID uint) ([]dto.Friend, error) {
 	var friends []dto.Friend
-
-	subQuery := r.DB.Raw(
-		`SELECT CASE WHEN user_id = ? THEN friend_id ELSE user_id END
-		 FROM friendships
-		 WHERE (user_id = ? OR friend_id = ?) AND status = ?`,
-		userID, userID, userID, model.StatusAccepted,
-	)
-
-	err := r.DB.Table("users").
-		Select("id, username").
-		Where("id IN (?) AND deleted_at IS NULL", subQuery).
+	err := r.DB.Table("friendships").
+		Select("users.id, users.username").
+		Joins("JOIN users ON users.id = friendships.friend_id").
+		Where("friendships.user_id = ? AND friendships.status = ? AND users.deleted_at IS NULL", userID, model.StatusAccepted).
 		Scan(&friends).Error
 	return friends, err
 }

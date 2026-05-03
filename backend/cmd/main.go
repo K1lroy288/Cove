@@ -42,6 +42,10 @@ func main() {
 	friendshipService := service.NewFriendshipService(friendshipRepo)
 	friendshipHandler := handler.NewFriendshipHandler(friendshipService)
 
+	chatRepo := repository.NewChatRepository(db)
+	chatService := service.NewChatService(chatRepo)
+	chatHandler := handler.NewChatHandler(chatService)
+
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
@@ -74,6 +78,14 @@ func main() {
 		friendship.GET("/friends", friendshipHandler.GetFriends)
 		friendship.POST("/", friendshipHandler.CreateFriendship)
 		friendship.PATCH("/:user_id/status", friendshipHandler.RespondToFriendRequest)
+	}
+
+	// ── Chat (требует JWT) ────────────────────────────────────────────────────────
+	chat := r.Group("/chat")
+	chat.Use(middleware.JWTAuth())
+	{
+		chat.GET("/", chatHandler.GetChats)
+		chat.POST("/", chatHandler.CreateChat)
 	}
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
