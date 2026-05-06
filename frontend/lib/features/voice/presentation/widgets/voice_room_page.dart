@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../../core/network/api_service.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../data/models/voice_room.dart';
+import '../../data/services/voice_service.dart';
 import '../voice_notifier.dart';
 
 class VoiceRoomPage extends StatefulWidget {
@@ -15,7 +15,7 @@ class VoiceRoomPage extends StatefulWidget {
 
 class _VoiceRoomPageState extends State<VoiceRoomPage>
     with TickerProviderStateMixin {
-  final ApiService _api = ApiService();
+  final VoiceService _api = VoiceService();
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 

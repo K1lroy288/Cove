@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
+import '../../data/services/chat_service.dart';
 
 class ChatWindowPanel extends StatefulWidget {
   final Chat chat;
@@ -17,7 +17,7 @@ class ChatWindowPanel extends StatefulWidget {
 }
 
 class _ChatWindowPanelState extends State<ChatWindowPanel> {
-  final ApiService _api = ApiService();
+  final ChatService _api = ChatService();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 

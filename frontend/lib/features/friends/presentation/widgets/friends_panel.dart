@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../../../features/chat/data/models/chat.dart';
+import '../../../../features/chat/data/services/chat_service.dart';
 import '../../data/models/friend.dart';
+import '../../data/services/friendship_service.dart';
 
 class FriendsPanel extends StatefulWidget {
   final Function(Chat) onOpenChat;
@@ -16,7 +17,8 @@ class FriendsPanel extends StatefulWidget {
 }
 
 class _FriendsPanelState extends State<FriendsPanel> {
-  final ApiService _api = ApiService();
+  final FriendshipService _friendshipService = FriendshipService();
+  final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
 
   List<Friend> _friends = [];
@@ -50,7 +52,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
     setState(() => _isLoading = true);
 
-    final friends = await _api.getFriends(
+    final friends = await _friendshipService.getFriends(
       userId: auth.userId!,
       token: auth.token!,
     );
@@ -69,7 +71,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
     setState(() => _openingChatForId = friend.id);
 
-    final chat = await _api.createChat(
+    final chat = await _chatService.createChat(
       friendId: friend.id,
       token: auth.token!,
     );

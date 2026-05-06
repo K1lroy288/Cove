@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/network/api_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../../friends/data/models/friend.dart';
+import '../../../friends/data/services/friendship_service.dart';
 import '../../../user/data/models/friend_request.dart';
 import '../../../user/data/models/user_dto.dart';
+import '../../../user/data/services/user_service.dart';
 import '../../data/models/chat.dart';
+import '../../data/services/chat_service.dart';
 
 enum _Tab { chats, requests }
 
@@ -20,7 +22,9 @@ class ChatListPanel extends StatefulWidget {
 }
 
 class _ChatListPanelState extends State<ChatListPanel> {
-  final ApiService _api = ApiService();
+  final ChatService _chatService = ChatService();
+  final FriendshipService _friendshipService = FriendshipService();
+  final UserService _userService = UserService();
   final TextEditingController _searchController = TextEditingController();
 
   _Tab _activeTab = _Tab.chats;
@@ -59,7 +63,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final token = context.read<AuthNotifier>().token;
     if (token == null) return;
 
-    final chats = await _api.getChats(token: token);
+    final chats = await _chatService.getChats(token: token);
     if (mounted) {
       setState(() {
         _chats = chats;
@@ -72,7 +76,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final auth = context.read<AuthNotifier>();
     if (auth.userId == null || auth.token == null) return;
 
-    final requests = await _api.getPendingRequests(
+    final requests = await _friendshipService.getPendingRequests(
       userId: auth.userId!,
       token: auth.token!,
     );
@@ -82,7 +86,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
   Future<void> _loadFriends() async {
     final auth = context.read<AuthNotifier>();
     if (auth.userId == null || auth.token == null) return;
-    final friends = await _api.getFriends(
+    final friends = await _friendshipService.getFriends(
       userId: auth.userId!,
       token: auth.token!,
     );
@@ -117,7 +121,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
       _foundUser = null;
     });
 
-    final user = await _api.searchUser(trimmed);
+    final user = await _userService.searchUser(trimmed);
 
     if (mounted) {
       setState(() {
@@ -139,7 +143,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
     setState(() => _isSendingRequest = true);
 
-    final (success, message) = await _api.createFriendship(
+    final (success, message) = await _friendshipService.createFriendship(
       userId: currentUserId,
       friendId: friend.id,
       token: token,
@@ -168,7 +172,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
     setState(() => _respondingIds.add(req.userId));
 
-    final (success, message) = await _api.respondToFriendRequest(
+    final (success, message) = await _friendshipService.respondToFriendRequest(
       fromUserId: req.userId,
       status: status,
       token: token,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/network/api_service.dart';
+import '../../voice/data/services/voice_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../auth/presentation/auth_notifier.dart';
 import '../../voice/presentation/voice_notifier.dart';
@@ -323,7 +323,7 @@ class _MainScreenState extends State<MainScreen> {
             onPressed: () async {
               final token = context.read<AuthNotifier>().token;
               if (token != null && voice.currentRoom != null) {
-                await ApiService().leaveVoiceRoom(
+                await VoiceService().leaveVoiceRoom(
                   roomId: voice.currentRoom!.id,
                   token: token,
                 );

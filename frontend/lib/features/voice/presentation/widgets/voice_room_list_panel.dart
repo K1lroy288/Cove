@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../../core/network/api_service.dart';
 import '../../../../../core/theme/app_theme.dart';
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../data/models/voice_room.dart';
+import '../../data/services/voice_service.dart';
 import '../voice_notifier.dart';
 
 class VoiceRoomListPanel extends StatefulWidget {
@@ -14,7 +14,7 @@ class VoiceRoomListPanel extends StatefulWidget {
 }
 
 class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
-  final ApiService _api = ApiService();
+  final VoiceService _api = VoiceService();
 
   List<VoiceRoom> _rooms = [];
   bool _isLoading = true;
