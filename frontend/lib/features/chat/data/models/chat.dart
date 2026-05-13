@@ -13,6 +13,16 @@ class Chat {
     this.lastMessageAt,
   });
 
+  Chat copyWith({String? lastMessage, DateTime? lastMessageAt}) {
+    return Chat(
+      id: id,
+      partnerId: partnerId,
+      partnerName: partnerName,
+      lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+    );
+  }
+
   factory Chat.fromJson(Map<String, dynamic> json) {
     return Chat(
       id: (json['id'] as num).toInt(),

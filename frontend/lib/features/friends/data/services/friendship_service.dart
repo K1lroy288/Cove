@@ -56,6 +56,23 @@ class FriendshipService {
     }
   }
 
+  Future<Set<int>> getSentRequestIds({required String token}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/friendship/sent'),
+        headers: _authHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => (e['id'] as num).toInt()).toSet();
+      }
+      return {};
+    } catch (e) {
+      log("Error getSentRequestIds: $e");
+      return {};
+    }
+  }
+
   Future<(bool, String)> createFriendship({
     required int userId,
     required int friendId,

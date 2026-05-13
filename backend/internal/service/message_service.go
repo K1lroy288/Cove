@@ -32,3 +32,7 @@ func (s *MessageService) SendMessage(chatID, senderID uint, content, msgType str
 func (s *MessageService) IsChatMember(chatID, userID uint) (bool, error) {
 	return s.repo.IsChatMember(chatID, userID)
 }
+
+func (s *MessageService) GetPartnerID(chatID, senderID uint) (uint, error) {
+	return s.repo.GetPartnerID(chatID, senderID)
+}

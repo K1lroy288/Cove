@@ -2,6 +2,7 @@ package repository
 
 import (
 	"cove/internal/model"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -64,4 +65,21 @@ func (r *MessageRepository) IsChatMember(chatID, userID uint) (bool, error) {
 		Where("chat_id = ? AND user_id = ?", chatID, userID).
 		Count(&count).Error
 	return count > 0, err
+}
+
+// GetPartnerID возвращает ID второго участника чата.
+func (r *MessageRepository) GetPartnerID(chatID, senderID uint) (uint, error) {
+	var partnerID uint
+	err := r.DB.Table("chat_members").
+		Select("user_id").
+		Where("chat_id = ? AND user_id != ?", chatID, senderID).
+		Limit(1).
+		Scan(&partnerID).Error
+	if err != nil {
+		return 0, err
+	}
+	if partnerID == 0 {
+		return 0, fmt.Errorf("partner not found for chat %d", chatID)
+	}
+	return partnerID, nil
 }

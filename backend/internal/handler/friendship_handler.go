@@ -12,12 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+
 type FriendshipHandler struct {
 	service *service.FriendshipService
+	userHub *UserHub
 }
 
-func NewFriendshipHandler(s *service.FriendshipService) *FriendshipHandler {
-	return &FriendshipHandler{service: s}
+func NewFriendshipHandler(s *service.FriendshipService, userHub *UserHub) *FriendshipHandler {
+	return &FriendshipHandler{service: s, userHub: userHub}
 }
 
 // currentUserID извлекает user_id из контекста (установлен JWT middleware).
@@ -107,6 +109,14 @@ func (h *FriendshipHandler) CreateFriendship(ctx *gin.Context) {
 		return
 	}
 
+	username := ctx.GetString("username")
+	if n, err := dto.NewNotification("friend_request", dto.FriendRequestPayload{
+		FromUserID: senderID,
+		Username:   username,
+	}); err == nil {
+		h.userHub.NotifyUser(req.FriendID, n)
+	}
+
 	ctx.Status(http.StatusCreated)
 }
 
@@ -149,11 +159,40 @@ func (h *FriendshipHandler) RespondToFriendRequest(ctx *gin.Context) {
 		return
 	}
 
+	if req.Status == "accepted" {
+		username := ctx.GetString("username")
+		if n, err := dto.NewNotification("friend_accepted", dto.FriendAcceptedPayload{
+			ByUserID: receiverID,
+			Username: username,
+		}); err == nil {
+			h.userHub.NotifyUser(uint(senderID), n)
+		}
+	}
+
 	message := "Заявка принята"
 	if req.Status == "declined" {
 		message = "Заявка отклонена"
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": message})
+}
+
+// GetSentRequests возвращает исходящие pending-заявки текущего пользователя.
+// GET /friendship/sent
+func (h *FriendshipHandler) GetSentRequests(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	sent, err := h.service.GetSentPendingRequests(userID)
+	if err != nil {
+		log.Printf("get sent requests error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, sent)
 }
 
 // GetFriends возвращает список друзей текущего пользователя.

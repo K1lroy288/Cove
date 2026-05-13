@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -14,8 +15,12 @@ enum _Tab { chats, requests }
 
 class ChatListPanel extends StatefulWidget {
   final Function(Chat) onChatSelected;
+  final VoidCallback? onFriendAccepted;
 
-  const ChatListPanel({super.key, required this.onChatSelected});
+  const ChatListPanel({super.key, required this.onChatSelected, this.onFriendAccepted});
+
+  // ignore: library_private_types_in_public_api
+  static GlobalKey<_ChatListPanelState> createKey() => GlobalKey<_ChatListPanelState>();
 
   @override
   State<ChatListPanel> createState() => _ChatListPanelState();
@@ -33,6 +38,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
   bool _isSendingRequest = false;
   String? _errorMessage;
 
+  Timer? _minuteTimer;
   List<Chat> _chats = [];
   bool _isLoadingChats = true;
 
@@ -51,12 +57,41 @@ class _ChatListPanelState extends State<ChatListPanel> {
     _loadChats();
     _loadPendingRequests();
     _loadFriends();
+    _loadSentRequestIds();
+    _minuteTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) { if (mounted) setState(() {}); },
+    );
   }
 
   @override
   void dispose() {
+    _minuteTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void reload() => _loadChats();
+  void refreshPendingRequests() => _loadPendingRequests();
+
+  void updateChatMessage(int chatId, String content, DateTime time) {
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx == -1) {
+      _loadChats();
+      return;
+    }
+    setState(() {
+      _chats[idx] = _chats[idx].copyWith(lastMessage: content, lastMessageAt: time);
+      _sortByRecent();
+    });
+  }
+
+  void _sortByRecent() {
+    _chats.sort((a, b) {
+      if (a.lastMessageAt == null) return 1;
+      if (b.lastMessageAt == null) return -1;
+      return b.lastMessageAt!.compareTo(a.lastMessageAt!);
+    });
   }
 
   Future<void> _loadChats() async {
@@ -67,6 +102,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     if (mounted) {
       setState(() {
         _chats = chats;
+        _sortByRecent();
         _isLoadingChats = false;
       });
     }
@@ -91,6 +127,13 @@ class _ChatListPanelState extends State<ChatListPanel> {
       token: auth.token!,
     );
     if (mounted) setState(() => _friends = friends);
+  }
+
+  Future<void> _loadSentRequestIds() async {
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    final ids = await _friendshipService.getSentRequestIds(token: token);
+    if (mounted) setState(() => _sentRequestIds.addAll(ids));
   }
 
   Future<void> _handleSearch(String query) async {
@@ -197,8 +240,10 @@ class _ChatListPanelState extends State<ChatListPanel> {
       ),
     );
 
-    // Refresh chat list after accepting so new DM appears
-    if (success && status == 'accepted') _loadChats();
+    if (success && status == 'accepted') {
+      _loadChats();
+      widget.onFriendAccepted?.call();
+    }
   }
 
   @override
@@ -561,10 +606,11 @@ class _ChatListPanelState extends State<ChatListPanel> {
   }
 
   String _formatTime(DateTime dt) {
+    final local = dt.toLocal();
     final now = DateTime.now();
-    if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
     }
-    return '${dt.day}.${dt.month.toString().padLeft(2, '0')}';
+    return '${local.day}.${local.month.toString().padLeft(2, '0')}';
   }
 }

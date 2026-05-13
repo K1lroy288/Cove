@@ -148,10 +148,11 @@ func (c *Client) writePump() {
 type MessageHandler struct {
 	service *service.MessageService
 	hub     *Hub
+	userHub *UserHub
 }
 
-func NewMessageHandler(service *service.MessageService, hub *Hub) *MessageHandler {
-	return &MessageHandler{service: service, hub: hub}
+func NewMessageHandler(service *service.MessageService, hub *Hub, userHub *UserHub) *MessageHandler {
+	return &MessageHandler{service: service, hub: hub, userHub: userHub}
 }
 
 var upgrader = websocket.Upgrader{
@@ -288,6 +289,17 @@ func (h *MessageHandler) SendMessage(ctx *gin.Context) {
 
 	if data, err := json.Marshal(result); err == nil {
 		h.hub.broadcast <- broadcastMsg{chatID: chatID, data: data}
+	}
+
+	if partnerID, err := h.service.GetPartnerID(chatID, userID); err == nil {
+		if n, err := dto.NewNotification("new_message", dto.NewMessagePayload{
+			ChatID:    chatID,
+			SenderID:  userID,
+			Content:   req.Content,
+			CreatedAt: msg.CreatedAt,
+		}); err == nil {
+			h.userHub.NotifyUser(partnerID, n)
+		}
 	}
 
 	ctx.JSON(http.StatusCreated, result)

@@ -17,6 +17,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _usernameFocusNode = FocusNode();
 
   // Состояние формы
   bool _isLogin = true;           // true = Вход, false = Регистрация
@@ -120,6 +121,7 @@ class _AuthScreenState extends State<AuthScreen> {
             _passwordController.clear();
             _confirmPasswordController.clear();
           });
+          _usernameFocusNode.requestFocus();
         }
       }
     } catch (e) {
@@ -146,6 +148,7 @@ class _AuthScreenState extends State<AuthScreen> {
       _passwordController.clear();
       _confirmPasswordController.clear();
     });
+    _usernameFocusNode.requestFocus();
   }
 
   // 🧹 Очистка ресурсов при уничтожении виджета
@@ -154,6 +157,7 @@ class _AuthScreenState extends State<AuthScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _usernameFocusNode.dispose();
     super.dispose();
   }
 
@@ -194,6 +198,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       // Поле: Имя пользователя
                       TextFormField(
                         controller: _usernameController,
+                        focusNode: _usernameFocusNode,
                         keyboardType: TextInputType.text,
                         textInputAction: TextInputAction.next,
                         autovalidateMode: AutovalidateMode.disabled,
@@ -212,6 +217,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         textInputAction: _isLogin ? TextInputAction.done : TextInputAction.next,
                         autovalidateMode: AutovalidateMode.disabled,
                         validator: _validatePassword,
+                        onFieldSubmitted: _isLogin ? (_) => _handleSubmit() : null,
                         decoration: const InputDecoration(
                           labelText: 'Пароль',
                           prefixIcon: Icon(Icons.lock_outline),
@@ -227,6 +233,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           textInputAction: TextInputAction.done,
                           autovalidateMode: AutovalidateMode.disabled,
                           validator: _validateConfirmPassword,
+                          onFieldSubmitted: (_) => _handleSubmit(),
                           decoration: const InputDecoration(
                             labelText: 'Подтвердите пароль',
                             prefixIcon: Icon(Icons.lock_reset),

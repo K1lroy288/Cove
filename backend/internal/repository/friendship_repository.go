@@ -80,6 +80,17 @@ func (r *FriendshipRepository) RespondToFriendRequest(senderID, receiverID uint,
 	return nil
 }
 
+// GetSentPendingRequests возвращает пользователей, которым текущий пользователь отправил заявку (статус pending).
+func (r *FriendshipRepository) GetSentPendingRequests(userID uint) ([]dto.Friend, error) {
+	var friends []dto.Friend
+	err := r.DB.Table("friendships").
+		Select("users.id, users.username").
+		Joins("JOIN users ON users.id = friendships.friend_id").
+		Where("friendships.user_id = ? AND friendships.status = ? AND users.deleted_at IS NULL", userID, model.StatusPending).
+		Scan(&friends).Error
+	return friends, err
+}
+
 // GetFriends возвращает список друзей пользователя.
 // Работает корректно благодаря симметричным записям: при принятии заявки
 // создаются обе строки (A→B и B→A), поэтому достаточно WHERE user_id=?.

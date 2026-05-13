@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../voice/data/services/voice_service.dart';
@@ -8,6 +9,8 @@ import '../../voice/presentation/widgets/voice_room_list_panel.dart';
 import '../../voice/presentation/widgets/voice_room_page.dart';
 import '../../chat/data/models/chat.dart';
 import '../../friends/presentation/widgets/friends_panel.dart';
+import '../data/models/notification.dart';
+import 'notification_notifier.dart';
 import 'widgets/chat_list_panel.dart';
 import 'widgets/chat_window_panel.dart';
 
@@ -21,6 +24,39 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   Chat? _selectedChat;
+
+  final _chatListKey = ChatListPanel.createKey();
+  final _friendsPanelKey = FriendsPanel.createKey();
+
+  StreamSubscription<NewMessageNotification>? _notifSub;
+  StreamSubscription<FriendRequestNotification>? _friendReqSub;
+  StreamSubscription<void>? _friendAcceptedSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final notif = context.read<NotificationNotifier>();
+      _notifSub = notif.messageStream.listen((n) {
+        _chatListKey.currentState?.updateChatMessage(n.chatId, n.content, n.createdAt);
+      });
+      _friendReqSub = notif.friendRequestStream.listen((_) {
+        _chatListKey.currentState?.refreshPendingRequests();
+        if (_selectedIndex == 0) notif.decrementPendingCount();
+      });
+      _friendAcceptedSub = notif.friendAcceptedStream.listen((_) {
+        _friendsPanelKey.currentState?.refresh();
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifSub?.cancel();
+    _friendReqSub?.cancel();
+    _friendAcceptedSub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,39 +93,66 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildNavigationRail() {
-    return NavigationRail(
-      backgroundColor: AppTheme.darkBg,
-      selectedIndex: _selectedIndex,
-      onDestinationSelected: (index) {
-        setState(() {
-          _selectedIndex = index;
-          if (index != 0) _selectedChat = null;
-        });
-      },
-      labelType: NavigationRailLabelType.none,
-      selectedIconTheme: const IconThemeData(color: AppTheme.accentIndigo),
-      unselectedIconTheme: const IconThemeData(color: Colors.white24),
-      destinations: const [
-        NavigationRailDestination(
-          icon: Icon(Icons.forum_outlined),
-          selectedIcon: Icon(Icons.forum),
-          label: Text('Чаты'),
+    return SizedBox(
+      width: 72,
+      child: Container(
+        color: AppTheme.darkBg,
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            _sidebarIconWithBadge(Icons.forum_outlined, Icons.forum, 0),
+            _sidebarIcon(Icons.people_outline, Icons.people, 1),
+            _sidebarIcon(Icons.graphic_eq_outlined, Icons.graphic_eq, 2),
+            const Spacer(),
+            _sidebarIcon(Icons.settings_outlined, Icons.settings, 3),
+            const SizedBox(height: 16),
+          ],
         ),
-        NavigationRailDestination(
-          icon: Icon(Icons.people_outline),
-          selectedIcon: Icon(Icons.people),
-          label: Text('Друзья'),
+      ),
+    );
+  }
+
+  Widget _sidebarIcon(IconData icon, IconData selectedIcon, int index) {
+    final sel = _selectedIndex == index;
+    return IconButton(
+      icon: Icon(sel ? selectedIcon : icon),
+      color: sel ? AppTheme.accentIndigo : Colors.white24,
+      tooltip: ['Чаты', 'Друзья', 'Голос', 'Настройки'][index],
+      onPressed: () => setState(() {
+        _selectedIndex = index;
+        if (index != 0) _selectedChat = null;
+      }),
+    );
+  }
+
+  Widget _sidebarIconWithBadge(IconData icon, IconData selectedIcon, int index) {
+    final sel = _selectedIndex == index;
+    final count = context.watch<NotificationNotifier>().pendingRequestCount;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(
+          icon: Icon(sel ? selectedIcon : icon),
+          color: sel ? AppTheme.accentIndigo : Colors.white24,
+          tooltip: 'Чаты',
+          onPressed: () {
+            setState(() => _selectedIndex = index);
+            context.read<NotificationNotifier>().decrementPendingCount();
+          },
         ),
-        NavigationRailDestination(
-          icon: Icon(Icons.graphic_eq_outlined),
-          selectedIcon: Icon(Icons.graphic_eq),
-          label: Text('Голос'),
-        ),
-        NavigationRailDestination(
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
-          label: Text('Настройки'),
-        ),
+        if (count > 0)
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -107,8 +170,11 @@ class _MainScreenState extends State<MainScreen> {
               SizedBox(
                 width: 320,
                 child: ChatListPanel(
+                  key: _chatListKey,
                   onChatSelected: (chat) =>
                       setState(() => _selectedChat = chat),
+                  onFriendAccepted: () =>
+                      _friendsPanelKey.currentState?.refresh(),
                 ),
               ),
               const VerticalDivider(width: 1, color: Colors.white10),
@@ -118,6 +184,9 @@ class _MainScreenState extends State<MainScreen> {
                     : ChatWindowPanel(
                         chat: _selectedChat!,
                         onBack: () => setState(() => _selectedChat = null),
+                        onMessageSent: (msg) =>
+                            _chatListKey.currentState?.updateChatMessage(
+                                msg.chatId, msg.content, msg.createdAt),
                       ),
               ),
             ],
@@ -125,12 +194,18 @@ class _MainScreenState extends State<MainScreen> {
         } else {
           return _selectedChat == null
               ? ChatListPanel(
+                  key: _chatListKey,
                   onChatSelected: (chat) =>
                       setState(() => _selectedChat = chat),
+                  onFriendAccepted: () =>
+                      _friendsPanelKey.currentState?.refresh(),
                 )
               : ChatWindowPanel(
                   chat: _selectedChat!,
                   onBack: () => setState(() => _selectedChat = null),
+                  onMessageSent: (msg) =>
+                      _chatListKey.currentState?.updateChatMessage(
+                          msg.chatId, msg.content, msg.createdAt),
                 );
         }
       },
@@ -233,10 +308,14 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildFriendsLayout() {
     return FriendsPanel(
-      onOpenChat: (Chat chat) => setState(() {
-        _selectedIndex = 0;
-        _selectedChat = chat;
-      }),
+      key: _friendsPanelKey,
+      onOpenChat: (Chat chat) {
+        setState(() {
+          _selectedIndex = 0;
+          _selectedChat = chat;
+        });
+        _chatListKey.currentState?.reload();
+      },
     );
   }
 

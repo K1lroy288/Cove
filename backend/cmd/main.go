@@ -38,9 +38,15 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService)
 
+	hub := handler.NewHub()
+	go hub.Run()
+
+	userHub := handler.NewUserHub()
+	go userHub.Run()
+
 	friendshipRepo := repository.NewFriendshipRepository(db)
 	friendshipService := service.NewFriendshipService(friendshipRepo)
-	friendshipHandler := handler.NewFriendshipHandler(friendshipService)
+	friendshipHandler := handler.NewFriendshipHandler(friendshipService, userHub)
 
 	chatRepo := repository.NewChatRepository(db)
 	chatService := service.NewChatService(chatRepo)
@@ -48,11 +54,7 @@ func main() {
 
 	messageRepo := repository.NewMessageRepository(db)
 	messageService := service.NewMessageService(messageRepo)
-
-	hub := handler.NewHub()
-	go hub.Run()
-
-	messageHandler := handler.NewMessageHandler(messageService, hub)
+	messageHandler := handler.NewMessageHandler(messageService, hub, userHub)
 
 	r := gin.Default()
 
@@ -83,6 +85,7 @@ func main() {
 	{
 		friendship.GET("/pending", friendshipHandler.GetPendingRequests)
 		friendship.GET("/pending/count", friendshipHandler.GetPendingRequestsCount)
+		friendship.GET("/sent", friendshipHandler.GetSentRequests)
 		friendship.GET("/friends", friendshipHandler.GetFriends)
 		friendship.POST("/", friendshipHandler.CreateFriendship)
 		friendship.PATCH("/:user_id/status", friendshipHandler.RespondToFriendRequest)
@@ -100,6 +103,7 @@ func main() {
 
 	// WS без JWT middleware — токен передаётся через query-параметр ?token=
 	r.GET("/chat/:id/ws", messageHandler.ServeWS)
+	r.GET("/ws", userHub.ServeWS)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	r.Run(addr)

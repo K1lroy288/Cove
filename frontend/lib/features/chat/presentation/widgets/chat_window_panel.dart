@@ -12,8 +12,9 @@ import '../../data/services/ws_service.dart';
 class ChatWindowPanel extends StatefulWidget {
   final Chat chat;
   final VoidCallback onBack;
+  final Function(Message)? onMessageSent;
 
-  const ChatWindowPanel({super.key, required this.chat, required this.onBack});
+  const ChatWindowPanel({super.key, required this.chat, required this.onBack, this.onMessageSent});
 
   @override
   State<ChatWindowPanel> createState() => _ChatWindowPanelState();
@@ -26,6 +27,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   final ScrollController _scrollController = ScrollController();
 
   StreamSubscription<Message>? _wsSub;
+  Timer? _minuteTimer;
   List<Message> _messages = [];
   bool _isLoading = true;
   bool _isSending = false;
@@ -36,6 +38,10 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     super.initState();
     _loadMessages();
     _connectWS();
+    _minuteTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) { if (mounted) setState(() {}); },
+    );
   }
 
   @override
@@ -56,6 +62,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   @override
   void dispose() {
     _wsSub?.cancel();
+    _minuteTimer?.cancel();
     _wsService.disconnect();
     _inputController.dispose();
     _scrollController.dispose();
@@ -161,6 +168,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           _messages.removeWhere((m) => m.id == sent.id || m.id == tempId);
           _messages.add(sent);
           _messages.sort((a, b) => a.id.compareTo(b.id));
+          widget.onMessageSent?.call(sent);
         } else {
           final idx = _messages.indexWhere((m) => m.id == tempId);
           if (idx != -1) {
@@ -432,8 +440,9 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
+    final local = dt.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
     return '$h:$m';
   }
 }

@@ -12,6 +12,9 @@ class FriendsPanel extends StatefulWidget {
 
   const FriendsPanel({super.key, required this.onOpenChat});
 
+  // ignore: library_private_types_in_public_api
+  static GlobalKey<_FriendsPanelState> createKey() => GlobalKey<_FriendsPanelState>();
+
   @override
   State<FriendsPanel> createState() => _FriendsPanelState();
 }
@@ -45,6 +48,8 @@ class _FriendsPanelState extends State<FriendsPanel> {
     _searchController.dispose();
     super.dispose();
   }
+
+  void refresh() => _loadFriends();
 
   Future<void> _loadFriends() async {
     final auth = context.read<AuthNotifier>();
