@@ -35,3 +35,33 @@ func (r *MessageRepository) GetMessages(chatID uint, beforeID *uint, limit int) 
 
 	return messages, nil
 }
+
+// SaveMessage сохраняет сообщение и обновляет денормализованные поля чата в одной транзакции.
+func (r *MessageRepository) SaveMessage(chatID, senderID uint, content, msgType string) (model.Message, error) {
+	msg := model.Message{
+		ChatID:   chatID,
+		SenderID: senderID,
+		Content:  content,
+		Type:     msgType,
+	}
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&msg).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Chat{}).Where("id = ?", chatID).Updates(map[string]any{
+			"last_message_id":      msg.ID,
+			"last_message_at":      msg.CreatedAt,
+			"last_message_content": content,
+		}).Error
+	})
+	return msg, err
+}
+
+// IsChatMember проверяет, является ли пользователь участником чата.
+func (r *MessageRepository) IsChatMember(chatID, userID uint) (bool, error) {
+	var count int64
+	err := r.DB.Table("chat_members").
+		Where("chat_id = ? AND user_id = ?", chatID, userID).
+		Count(&count).Error
+	return count > 0, err
+}

@@ -51,6 +51,9 @@ cd backend && go run ./cmd/main.go
 
 # Сборка и проверка
 cd backend && go build ./... && go vet ./...
+
+# Фронтенд
+cd frontend && flutter run -d chrome   # или -d linux / любой target
 ```
 
 ---
@@ -70,6 +73,93 @@ Handler → Service → Repository → DB
 | **DTO** | API-контракты (вход и выход) | SQL, бизнес-логику |
 
 **Правило:** никогда не пропускать слои. Никогда не возвращать `model.*` напрямую из хендлера.
+
+---
+
+## Frontend
+
+**Стек:** Flutter 3.x · Provider 6 · http · `core/theme/app_theme.dart` (dark, indigo)
+
+### Структура фичи
+
+```
+features/<name>/
+├── data/
+│   ├── models/        # Dart-модели с fromJson()
+│   └── services/      # HTTP-клиент домена (один класс)
+└── presentation/
+    ├── <screen>.dart
+    └── widgets/
+```
+
+Фичи: `auth` · `chat` · `friends` · `user` · `voice`.
+`core/` содержит только `theme/app_theme.dart` — всё остальное живёт внутри фичей.
+
+### Слои
+
+| Слой | Роль | Не делает |
+|---|---|---|
+| **Service** | HTTP-запросы, Bearer-заголовки, `null`/`[]` при ошибке | Бизнес-логику, UI |
+| **Model** | `fromJson`, поля DTO | HTTP-запросы |
+| **Notifier** | Глобальный стейт (`extends ChangeNotifier`) | HTTP |
+| **Widget** | Локальный стейт, вызывает сервисы, рисует UI | SQL, HTTP напрямую |
+
+### Стейт-менеджмент (Provider)
+
+Два глобальных нотифайера объявлены в `MultiProvider` в `main.dart`:
+- **`AuthNotifier`** — `userId`, `username`, `token`, `isAuthenticated`; методы `login()` / `logout()`
+- **`VoiceNotifier`** — `currentRoom`, `isMuted`; методы `joinRoom()` / `leaveRoom()` / `toggleMute()`
+
+```dart
+context.watch<T>()   // подписка на ребилд
+context.read<T>()    // однократное чтение (в обработчиках событий)
+```
+
+Auth guard в `main.dart`:
+```dart
+Consumer<AuthNotifier>(builder: (_, auth, __) =>
+  auth.isAuthenticated ? const MainScreen() : const AuthScreen())
+```
+
+### Инстанцирование сервисов
+
+Нет DI-контейнера — сервисы создаются как поля `State`-класса:
+```dart
+final ChatService _chatService = ChatService();
+final FriendshipService _friendshipService = FriendshipService();
+```
+
+### Поток токена
+
+Токен хранится только в памяти (`AuthNotifier._token`), не персистируется.
+Каждый метод сервиса принимает `required String token`:
+```dart
+final token = context.read<AuthNotifier>().token;
+await _chatService.getChats(token: token!);
+```
+Все сервисы используют одинаковый хелпер `_authHeaders(token)` →
+`{'Content-Type': 'application/json', 'Authorization': 'Bearer $token'}`.
+
+### Навигация
+
+- Нет именованных роутов — только колбэки и `setState`
+- `MainScreen` — 4 таба через `NavigationRail` + `IndexedStack`:
+  `0 Чаты · 1 Друзья · 2 Голос · 3 Настройки`
+- Адаптив: `LayoutBuilder` + `constraints.maxWidth > 800` → split / single-panel view
+
+### Обработка ошибок
+
+```
+Service  →  возвращает null / [] при ошибке + log("Error ...")
+Widget   →  SnackBar для действий пользователя (addFriend, sendMessage)
+           silent fail для фоновой загрузки (getChats, getMessages)
+Auth     →  throws Exception → отображается в форме через setState
+```
+
+### Оптимистичный UI (сообщения)
+
+Сообщение добавляется с временным отрицательным ID сразу; заменяется реальным после ответа сервера.
+`Message.isOptimistic = true` → красный tint при неудаче, `Icons.error_outline` вместо галочки.
 
 ---
 

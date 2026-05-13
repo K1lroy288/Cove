@@ -46,6 +46,14 @@ func main() {
 	chatService := service.NewChatService(chatRepo)
 	chatHandler := handler.NewChatHandler(chatService)
 
+	messageRepo := repository.NewMessageRepository(db)
+	messageService := service.NewMessageService(messageRepo)
+
+	hub := handler.NewHub()
+	go hub.Run()
+
+	messageHandler := handler.NewMessageHandler(messageService, hub)
+
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
@@ -86,7 +94,12 @@ func main() {
 	{
 		chat.GET("/", chatHandler.GetChats)
 		chat.POST("/", chatHandler.CreateChat)
+		chat.GET("/:id/messages", messageHandler.GetMessages)
+		chat.POST("/:id/messages", messageHandler.SendMessage)
 	}
+
+	// WS без JWT middleware — токен передаётся через query-параметр ?token=
+	r.GET("/chat/:id/ws", messageHandler.ServeWS)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	r.Run(addr)

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -5,6 +7,7 @@ import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/services/chat_service.dart';
+import '../../data/services/ws_service.dart';
 
 class ChatWindowPanel extends StatefulWidget {
   final Chat chat;
@@ -18,37 +21,71 @@ class ChatWindowPanel extends StatefulWidget {
 
 class _ChatWindowPanelState extends State<ChatWindowPanel> {
   final ChatService _api = ChatService();
+  final WsService _wsService = WsService();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
+  StreamSubscription<Message>? _wsSub;
   List<Message> _messages = [];
   bool _isLoading = true;
   bool _isSending = false;
-  int _optimisticCounter = -1; // negative IDs for optimistic messages
+  int _optimisticCounter = -1;
 
   @override
   void initState() {
     super.initState();
     _loadMessages();
+    _connectWS();
   }
 
   @override
   void didUpdateWidget(ChatWindowPanel old) {
     super.didUpdateWidget(old);
     if (old.chat.id != widget.chat.id) {
+      _wsSub?.cancel();
+      _wsService.disconnect();
       setState(() {
         _messages = [];
         _isLoading = true;
       });
       _loadMessages();
+      _connectWS();
     }
   }
 
   @override
   void dispose() {
+    _wsSub?.cancel();
+    _wsService.disconnect();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _connectWS() {
+    final auth = context.read<AuthNotifier>();
+    if (auth.token == null) return;
+
+    _wsSub = _wsService
+        .connect(widget.chat.id, auth.token!)
+        .listen(
+          (msg) {
+            if (!mounted) return;
+            // Дедупликация: sender получает сообщение и по REST и по WS
+            if (_messages.any((m) => m.id == msg.id)) return;
+            setState(() => _messages.add(msg));
+            _scrollToBottom();
+          },
+          onError: (Object e) => log('ws error: $e'),
+          onDone: () {
+            log('ws closed for chat ${widget.chat.id}');
+            if (mounted) {
+              Future.delayed(const Duration(seconds: 3), () {
+                if (mounted) _connectWS();
+              });
+            }
+          },
+        );
   }
 
   Future<void> _loadMessages() async {
@@ -62,7 +99,12 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
     if (mounted) {
       setState(() {
-        _messages = msgs;
+        final loadedIds = msgs.map((m) => m.id).toSet();
+        final wsExtras = _messages
+            .where((m) => m.id > 0 && !loadedIds.contains(m.id))
+            .toList();
+        _messages = [...msgs, ...wsExtras]
+          ..sort((a, b) => a.id.compareTo(b.id));
         _isLoading = false;
       });
       _scrollToBottom();
@@ -114,12 +156,16 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     if (mounted) {
       setState(() {
         _isSending = false;
-        final idx = _messages.indexWhere((m) => m.id == tempId);
-        if (sent != null && idx != -1) {
-          _messages[idx] = sent;
-        } else if (idx != -1) {
-          // Mark failed — keep optimistic with red tint handled by isOptimistic
-          _messages[idx] = optimistic.copyWith(isOptimistic: true);
+        if (sent != null) {
+          // Удаляем оптимистичное и WS-дубликат (если broadcast пришёл раньше REST)
+          _messages.removeWhere((m) => m.id == sent.id || m.id == tempId);
+          _messages.add(sent);
+          _messages.sort((a, b) => a.id.compareTo(b.id));
+        } else {
+          final idx = _messages.indexWhere((m) => m.id == tempId);
+          if (idx != -1) {
+            _messages[idx] = optimistic.copyWith(isOptimistic: true);
+          }
         }
       });
     }
