@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../voice/data/services/voice_service.dart';
-import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/app_theme.dart' show AppTheme, AppColors;
+import '../../settings/presentation/settings_screen.dart';
 import '../../auth/presentation/auth_notifier.dart';
 import '../../voice/presentation/voice_notifier.dart';
 import '../../voice/presentation/widgets/voice_room_list_panel.dart';
@@ -64,6 +65,7 @@ class _MainScreenState extends State<MainScreen> {
     final voice = context.watch<VoiceNotifier>();
     final username = auth.username ?? "User";
 
+    final colors = AppColors.of(context);
     return Scaffold(
       body: Column(
         children: [
@@ -71,7 +73,7 @@ class _MainScreenState extends State<MainScreen> {
             child: Row(
               children: [
                 _buildNavigationRail(),
-                const VerticalDivider(width: 1, color: Colors.white10),
+                VerticalDivider(width: 1, color: colors.divider),
                 Expanded(
                   child: IndexedStack(
                     index: _selectedIndex,
@@ -79,7 +81,7 @@ class _MainScreenState extends State<MainScreen> {
                       _buildChatLayout(username),
                       _buildFriendsLayout(),
                       _buildVoiceLayout(),
-                      _buildSettingsPage(username),
+                      const SettingsScreen(),
                     ],
                   ),
                 ),
@@ -93,10 +95,11 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildNavigationRail() {
+    final colors = AppColors.of(context);
     return SizedBox(
       width: 72,
       child: Container(
-        color: AppTheme.darkBg,
+        color: colors.bg,
         child: Column(
           children: [
             const SizedBox(height: 8),
@@ -114,9 +117,10 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _sidebarIcon(IconData icon, IconData selectedIcon, int index) {
     final sel = _selectedIndex == index;
+    final colors = AppColors.of(context);
     return IconButton(
       icon: Icon(sel ? selectedIcon : icon),
-      color: sel ? AppTheme.accentIndigo : Colors.white24,
+      color: sel ? AppTheme.accentIndigo : colors.textSecondary,
       tooltip: ['Чаты', 'Друзья', 'Голос', 'Настройки'][index],
       onPressed: () => setState(() {
         _selectedIndex = index;
@@ -127,13 +131,14 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _sidebarIconWithBadge(IconData icon, IconData selectedIcon, int index) {
     final sel = _selectedIndex == index;
+    final colors = AppColors.of(context);
     final count = context.watch<NotificationNotifier>().pendingRequestCount;
     return Stack(
       alignment: Alignment.center,
       children: [
         IconButton(
           icon: Icon(sel ? selectedIcon : icon),
-          color: sel ? AppTheme.accentIndigo : Colors.white24,
+          color: sel ? AppTheme.accentIndigo : colors.textSecondary,
           tooltip: 'Чаты',
           onPressed: () {
             setState(() => _selectedIndex = index);
@@ -177,7 +182,7 @@ class _MainScreenState extends State<MainScreen> {
                       _friendsPanelKey.currentState?.refresh(),
                 ),
               ),
-              const VerticalDivider(width: 1, color: Colors.white10),
+              VerticalDivider(width: 1, color: AppColors.of(context).divider),
               Expanded(
                 child: _selectedChat == null
                     ? _buildDashboard(username)
@@ -213,24 +218,24 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildDashboard(String username) {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       padding: const EdgeInsets.all(40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             "Привет, $username",
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
-                color: Colors.white),
+                color: colors.textPrimary),
           ),
           const SizedBox(height: 10),
           Text(
             "Выберите чат слева или найдите пользователя через поиск.",
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5), fontSize: 16),
+            style: TextStyle(color: colors.textSecondary, fontSize: 16),
           ),
           const SizedBox(height: 40),
           Expanded(
@@ -264,14 +269,15 @@ class _MainScreenState extends State<MainScreen> {
     Color color, {
     VoidCallback? onTap,
   }) {
+    final colors = AppColors.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: AppTheme.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.03)),
+          border: Border.all(color: colors.divider.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -290,11 +296,13 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: colors.textPrimary)),
                   Text(subtitle,
-                      style: const TextStyle(
-                          fontSize: 13, color: Colors.white38)),
+                      style: TextStyle(
+                          fontSize: 13, color: colors.textSecondary)),
                 ],
               ),
             ),
@@ -332,7 +340,7 @@ class _MainScreenState extends State<MainScreen> {
                 width: 280,
                 child: VoiceRoomListPanel(),
               ),
-              const VerticalDivider(width: 1, color: Colors.white10),
+              VerticalDivider(width: 1, color: AppColors.of(context).divider),
               const Expanded(child: VoiceRoomPage()),
             ],
           );
@@ -415,127 +423,4 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // ── Settings ──────────────────────────────────────────────────────────────────
-
-  Widget _buildSettingsPage(String username) {
-    return Container(
-      color: AppTheme.darkBg,
-      padding: const EdgeInsets.all(40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("Настройки",
-              style:
-                  TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 32),
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 35,
-                  backgroundColor: AppTheme.accentIndigo,
-                  child: Text(
-                    username.isNotEmpty ? username[0].toUpperCase() : "U",
-                    style: const TextStyle(
-                        fontSize: 28,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(username,
-                        style: const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                              color: Colors.greenAccent,
-                              shape: BoxShape.circle),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text("В сети",
-                            style: TextStyle(
-                                color: Colors.white54, fontSize: 14)),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          _settingsOption(Icons.notifications_none_rounded, "Уведомления",
-              "Настройка пушей и звуков"),
-          _settingsOption(Icons.shield_outlined, "Приватность",
-              "Кто может видеть ваш статус"),
-          _settingsOption(Icons.info_outline, "О приложении", "Cove v0.1.0"),
-          const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent.withValues(alpha: 0.08),
-                foregroundColor: Colors.redAccent,
-                padding: const EdgeInsets.symmetric(vertical: 22),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18)),
-                elevation: 0,
-              ),
-              onPressed: () =>
-                  Provider.of<AuthNotifier>(context, listen: false).logout(),
-              icon: const Icon(Icons.logout_rounded),
-              label: const Text("Выйти из аккаунта",
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _settingsOption(IconData icon, String title, String subtitle) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppTheme.accentIndigo, size: 26),
-          const SizedBox(width: 18),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white.withValues(alpha: 0.4))),
-            ],
-          ),
-          const Spacer(),
-          Icon(Icons.chevron_right_rounded,
-              color: Colors.white.withValues(alpha: 0.2)),
-        ],
-      ),
-    );
-  }
 }

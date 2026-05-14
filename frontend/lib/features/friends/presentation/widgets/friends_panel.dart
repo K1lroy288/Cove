@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../../../features/chat/data/models/chat.dart';
 import '../../../../features/chat/data/services/chat_service.dart';
@@ -99,13 +99,14 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Column(
         children: [
           _buildHeader(),
           _buildSearch(),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -113,13 +114,14 @@ class _FriendsPanelState extends State<FriendsPanel> {
   }
 
   Widget _buildHeader() {
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
       child: Row(
         children: [
-          const Text(
+          Text(
             'Друзья',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: colors.textPrimary),
           ),
           if (_friends.isNotEmpty) ...[
             const SizedBox(width: 10),
@@ -141,7 +143,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
           ],
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: Colors.white38),
+            icon: Icon(Icons.refresh, size: 20, color: colors.textSecondary),
             tooltip: 'Обновить',
             onPressed: _loadFriends,
           ),
@@ -151,20 +153,20 @@ class _FriendsPanelState extends State<FriendsPanel> {
   }
 
   Widget _buildSearch() {
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: TextField(
         controller: _searchController,
         onChanged: (v) => setState(() => _searchQuery = v.trim()),
-        style: const TextStyle(color: Colors.white, fontSize: 14),
+        style: TextStyle(color: colors.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           hintText: 'Поиск среди друзей...',
-          hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-          prefixIcon: const Icon(Icons.search, color: Colors.white30, size: 20),
+          hintStyle: TextStyle(color: colors.textSecondary, fontSize: 14),
+          prefixIcon: Icon(Icons.search, color: colors.textSecondary, size: 20),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.close,
-                      color: Colors.white30, size: 18),
+                  icon: Icon(Icons.close, color: colors.textSecondary, size: 18),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
@@ -172,7 +174,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
                 )
               : null,
           filled: true,
-          fillColor: AppTheme.surface,
+          fillColor: colors.surface,
           contentPadding: const EdgeInsets.symmetric(vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
@@ -191,20 +193,22 @@ class _FriendsPanelState extends State<FriendsPanel> {
       );
     }
 
+    final colors = AppColors.of(context);
+
     if (_friends.isEmpty) {
       return Center(
         child: Opacity(
           opacity: 0.35,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.people_outline, size: 56, color: Colors.white),
-              SizedBox(height: 14),
+            children: [
+              Icon(Icons.people_outline, size: 56, color: colors.textPrimary),
+              const SizedBox(height: 14),
               Text('Друзей пока нет',
-                  style: TextStyle(fontSize: 16, color: Colors.white)),
-              SizedBox(height: 8),
+                  style: TextStyle(fontSize: 16, color: colors.textPrimary)),
+              const SizedBox(height: 8),
               Text('Найдите пользователя через поиск в чатах',
-                  style: TextStyle(fontSize: 13, color: Colors.white)),
+                  style: TextStyle(fontSize: 13, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -217,7 +221,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
       return Center(
         child: Text(
           'Никого не найдено по «$_searchQuery»',
-          style: const TextStyle(color: Colors.white38, fontSize: 14),
+          style: TextStyle(color: colors.textSecondary, fontSize: 14),
         ),
       );
     }
@@ -229,7 +233,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: list.length,
         separatorBuilder: (_, _) =>
-            const Divider(height: 1, color: Colors.white10, indent: 72),
+            Divider(height: 1, color: colors.divider, indent: 72),
         itemBuilder: (context, i) => _buildFriendTile(list[i]),
       ),
     );
@@ -240,16 +244,17 @@ class _FriendsPanelState extends State<FriendsPanel> {
     final initial = friend.username.isNotEmpty
         ? friend.username[0].toUpperCase()
         : '?';
+    final appColors = AppColors.of(context);
 
     // Случайный, но стабильный цвет на основе ID
-    final colors = [
+    final palette = [
       AppTheme.accentIndigo,
       Colors.teal,
       Colors.deepPurple,
       Colors.blueAccent,
       Colors.green,
     ];
-    final color = colors[friend.id % colors.length];
+    final color = palette[friend.id % palette.length];
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -276,7 +281,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
               decoration: BoxDecoration(
                 color: Colors.grey,
                 shape: BoxShape.circle,
-                border: Border.all(color: AppTheme.darkBg, width: 2),
+                border: Border.all(color: appColors.bg, width: 2),
               ),
             ),
           ),
@@ -284,11 +289,11 @@ class _FriendsPanelState extends State<FriendsPanel> {
       ),
       title: Text(
         friend.username,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: appColors.textPrimary),
       ),
-      subtitle: const Text(
+      subtitle: Text(
         'Не в сети',
-        style: TextStyle(fontSize: 12, color: Colors.white38),
+        style: TextStyle(fontSize: 12, color: appColors.textSecondary),
       ),
       trailing: isOpening
           ? const SizedBox(

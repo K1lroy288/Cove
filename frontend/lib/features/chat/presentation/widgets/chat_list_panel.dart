@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../../friends/data/models/friend.dart';
 import '../../../friends/data/services/friendship_service.dart';
@@ -248,20 +248,23 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
-                const Text("Сообщения",
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Text("Сообщения",
+                    style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: colors.textPrimary)),
                 const Spacer(),
                 IconButton(
-                    icon: const Icon(Icons.edit_note, color: Colors.white54),
+                    icon: Icon(Icons.edit_note, color: colors.textSecondary),
                     onPressed: () {}),
               ],
             ),
@@ -273,17 +276,17 @@ class _ChatListPanelState extends State<ChatListPanel> {
               child: TextField(
                 controller: _searchController,
                 onChanged: _handleSearch,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(color: colors.textPrimary, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: "Найти пользователя...",
                   hintStyle:
-                      const TextStyle(color: Colors.white30, fontSize: 14),
-                  prefixIcon: const Icon(Icons.search,
-                      color: Colors.white30, size: 20),
+                      TextStyle(color: colors.textSecondary, fontSize: 14),
+                  prefixIcon: Icon(Icons.search,
+                      color: colors.textSecondary, size: 20),
                   suffixIcon: _hasQuery
                       ? IconButton(
-                          icon: const Icon(Icons.close,
-                              color: Colors.white30, size: 18),
+                          icon: Icon(Icons.close,
+                              color: colors.textSecondary, size: 18),
                           onPressed: () {
                             _searchController.clear();
                             _handleSearch('');
@@ -291,7 +294,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
                         )
                       : null,
                   filled: true,
-                  fillColor: AppTheme.surface,
+                  fillColor: colors.surface,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 10),
                   border: OutlineInputBorder(
@@ -312,12 +315,13 @@ class _ChatListPanelState extends State<ChatListPanel> {
   }
 
   Widget _buildTabSwitcher() {
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
-          color: AppTheme.surface,
+          color: colors.surface,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -333,6 +337,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
   Widget _tabButton(String label, _Tab tab, {int badge = 0}) {
     final isActive = _activeTab == tab;
+    final colors = AppColors.of(context);
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _activeTab = tab),
@@ -340,7 +345,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 7),
           decoration: BoxDecoration(
-            color: isActive ? AppTheme.darkBg : Colors.transparent,
+            color: isActive ? colors.bg : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -352,7 +357,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
                   fontSize: 13,
                   fontWeight:
                       isActive ? FontWeight.w600 : FontWeight.normal,
-                  color: isActive ? Colors.white : Colors.white38,
+                  color: isActive ? colors.textPrimary : colors.textSecondary,
                 ),
               ),
               if (badge > 0) ...[
@@ -391,8 +396,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     if (_errorMessage != null) {
       return Center(
         child: Text(_errorMessage!,
-            style:
-                const TextStyle(color: Colors.white38, fontSize: 14)),
+            style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 14)),
       );
     }
     return const SizedBox.shrink();
@@ -447,7 +451,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
       title: Text(user.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
-          style: const TextStyle(color: Colors.white38, fontSize: 12)),
+          style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12)),
       trailing: trailing,
     );
   }
@@ -462,19 +466,20 @@ class _ChatListPanelState extends State<ChatListPanel> {
     }
 
     if (_chats.isEmpty) {
+      final colors = AppColors.of(context);
       return Center(
         child: Opacity(
           opacity: 0.3,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.forum_outlined, size: 48, color: Colors.white),
-              SizedBox(height: 12),
+            children: [
+              Icon(Icons.forum_outlined, size: 48, color: colors.textPrimary),
+              const SizedBox(height: 12),
               Text("Чатов пока нет",
-                  style: TextStyle(fontSize: 14, color: Colors.white)),
-              SizedBox(height: 6),
+                  style: TextStyle(fontSize: 14, color: colors.textPrimary)),
+              const SizedBox(height: 6),
               Text("Добавьте друга через поиск",
-                  style: TextStyle(fontSize: 12, color: Colors.white)),
+                  style: TextStyle(fontSize: 12, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -495,6 +500,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final initial = chat.partnerName.isNotEmpty
         ? chat.partnerName[0].toUpperCase()
         : '?';
+    final colors = AppColors.of(context);
 
     return ListTile(
       onTap: () => widget.onChatSelected(chat),
@@ -510,21 +516,20 @@ class _ChatListPanelState extends State<ChatListPanel> {
         ),
       ),
       title: Text(chat.partnerName,
-          style: const TextStyle(fontWeight: FontWeight.w600)),
+          style: TextStyle(fontWeight: FontWeight.w600, color: colors.textPrimary)),
       subtitle: chat.lastMessage != null
           ? Text(
               chat.lastMessage!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white38, fontSize: 12),
+              style: TextStyle(color: colors.textSecondary, fontSize: 12),
             )
-          : const Text("Нет сообщений",
-              style: TextStyle(color: Colors.white24, fontSize: 12)),
+          : Text("Нет сообщений",
+              style: TextStyle(color: colors.textSecondary, fontSize: 12)),
       trailing: chat.lastMessageAt != null
           ? Text(
               _formatTime(chat.lastMessageAt!),
-              style:
-                  const TextStyle(fontSize: 11, color: Colors.white24),
+              style: TextStyle(fontSize: 11, color: colors.textSecondary),
             )
           : null,
     );
@@ -534,16 +539,17 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
   Widget _buildRequestsList() {
     if (_pendingRequests.isEmpty) {
+      final colors = AppColors.of(context);
       return Center(
         child: Opacity(
           opacity: 0.3,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.people_outline, size: 48, color: Colors.white),
-              SizedBox(height: 12),
+            children: [
+              Icon(Icons.people_outline, size: 48, color: colors.textPrimary),
+              const SizedBox(height: 12),
               Text("Заявок пока нет",
-                  style: TextStyle(fontSize: 14, color: Colors.white)),
+                  style: TextStyle(fontSize: 14, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -574,8 +580,8 @@ class _ChatListPanelState extends State<ChatListPanel> {
       ),
       title: Text(req.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text("Хочет добавить вас в друзья",
-          style: TextStyle(color: Colors.white38, fontSize: 12)),
+      subtitle: Text("Хочет добавить вас в друзья",
+          style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12)),
       trailing: isResponding
           ? const SizedBox(
               width: 20,

@@ -54,6 +54,10 @@ func main() {
 
 	messageHandler := handler.NewMessageHandler(messageService, appHub)
 
+	settingsRepo := repository.NewSettingsRepository(db)
+	settingsService := service.NewSettingsService(settingsRepo)
+	settingsHandler := handler.NewSettingsHandler(settingsService)
+
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
@@ -95,6 +99,16 @@ func main() {
 		chat.POST("/", chatHandler.CreateChat)
 		chat.GET("/:id/messages", messageHandler.GetMessages)
 		chat.POST("/:id/messages", messageHandler.SendMessage)
+	}
+
+	// ── Settings (требует JWT) ───────────────────────────────────────────────────
+	settings := r.Group("/settings")
+	settings.Use(middleware.JWTAuth())
+	{
+		settings.GET("/", settingsHandler.GetSettings)
+		settings.PATCH("/", settingsHandler.UpdateSettings)
+		settings.GET("/chat/:id", settingsHandler.GetChatNotifSettings)
+		settings.PATCH("/chat/:id", settingsHandler.UpdateChatNotifSettings)
 	}
 
 	// WS без JWT middleware — токен передаётся через query-параметр ?token=

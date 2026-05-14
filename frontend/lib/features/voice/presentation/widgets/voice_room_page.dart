@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../../core/theme/app_theme.dart';
+import '../../../../../core/theme/app_theme.dart' show AppColors;
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../data/models/voice_room.dart';
 import '../../data/services/voice_service.dart';
@@ -55,14 +55,15 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
 
     if (room == null) return _buildEmptyState();
 
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Column(
         children: [
           _buildHeader(room),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           Expanded(child: _buildMembersGrid(room.members, voice)),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           _buildControls(context, voice),
         ],
       ),
@@ -70,21 +71,22 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
   }
 
   Widget _buildEmptyState() {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Center(
         child: Opacity(
           opacity: 0.3,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.mic_none, size: 64, color: Colors.white),
-              SizedBox(height: 16),
+            children: [
+              Icon(Icons.mic_none, size: 64, color: colors.textPrimary),
+              const SizedBox(height: 16),
               Text('Выберите комнату слева',
-                  style: TextStyle(fontSize: 16, color: Colors.white)),
-              SizedBox(height: 8),
+                  style: TextStyle(fontSize: 16, color: colors.textPrimary)),
+              const SizedBox(height: 8),
               Text('или создайте новую',
-                  style: TextStyle(fontSize: 13, color: Colors.white)),
+                  style: TextStyle(fontSize: 13, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -111,11 +113,13 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(room.name,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.of(context).textPrimary)),
               Text(
                 '${room.members.length} участн.',
-                style: const TextStyle(fontSize: 12, color: Colors.white38),
+                style: TextStyle(fontSize: 12, color: AppColors.of(context).textSecondary),
               ),
             ],
           ),
@@ -212,7 +216,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
                 radius: 34,
                 backgroundColor: member.isSpeaking
                     ? Colors.greenAccent.withValues(alpha: 0.15)
-                    : AppTheme.surface,
+                    : AppColors.of(context).surface,
                 child: Text(
                   member.username[0].toUpperCase(),
                   style: TextStyle(
@@ -220,7 +224,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
                     fontWeight: FontWeight.bold,
                     color: member.isSpeaking
                         ? Colors.greenAccent
-                        : Colors.white70,
+                        : AppColors.of(context).textPrimary,
                   ),
                 ),
               ),
@@ -230,7 +234,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
                   decoration: BoxDecoration(
                     color: Colors.redAccent,
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppTheme.darkBg, width: 2),
+                    border: Border.all(color: AppColors.of(context).bg, width: 2),
                   ),
                   child: const Icon(Icons.mic_off,
                       size: 10, color: Colors.white),
@@ -244,7 +248,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: member.isSpeaking ? Colors.greenAccent : Colors.white,
+            color: member.isSpeaking ? Colors.greenAccent : AppColors.of(context).textPrimary,
           ),
           overflow: TextOverflow.ellipsis,
         ),
@@ -259,6 +263,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
   }
 
   Widget _buildControls(BuildContext context, VoiceNotifier voice) {
+    final colors = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: Row(
@@ -267,10 +272,10 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
           _controlBtn(
             icon: voice.isMuted ? Icons.mic_off : Icons.mic,
             label: voice.isMuted ? 'Включить' : 'Выключить',
-            color: voice.isMuted ? Colors.redAccent : Colors.white70,
+            color: voice.isMuted ? Colors.redAccent : colors.textPrimary,
             bgColor: voice.isMuted
                 ? Colors.redAccent.withValues(alpha: 0.15)
-                : AppTheme.surface,
+                : colors.surface,
             onTap: voice.toggleMute,
           ),
           const SizedBox(width: 32),
@@ -306,7 +311,7 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
           ),
           const SizedBox(height: 6),
           Text(label,
-              style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              style: TextStyle(fontSize: 12, color: AppColors.of(context).textSecondary)),
         ],
       ),
     );

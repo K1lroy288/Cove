@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
@@ -177,14 +177,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Column(
         children: [
           _buildHeader(),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           Expanded(child: _buildMessageList()),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           _buildInputArea(),
         ],
       ),
@@ -224,7 +225,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: Colors.white38),
+            icon: Icon(Icons.refresh, size: 20, color: AppColors.of(context).textSecondary),
             onPressed: () {
               setState(() => _isLoading = true);
               _loadMessages();
@@ -243,16 +244,17 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     }
 
     if (_messages.isEmpty) {
+      final colors = AppColors.of(context);
       return Center(
         child: Opacity(
           opacity: 0.3,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.chat_bubble_outline, size: 48, color: Colors.white),
-              SizedBox(height: 12),
+            children: [
+              Icon(Icons.chat_bubble_outline, size: 48, color: colors.textPrimary),
+              const SizedBox(height: 12),
               Text("Начните общение",
-                  style: TextStyle(fontSize: 14, color: Colors.white)),
+                  style: TextStyle(fontSize: 14, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -293,17 +295,18 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       label = '${date.day}.${date.month.toString().padLeft(2, '0')}.${date.year}';
     }
 
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
         children: [
-          const Expanded(child: Divider(color: Colors.white10)),
+          Expanded(child: Divider(color: colors.divider)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(label,
-                style: const TextStyle(fontSize: 11, color: Colors.white24)),
+                style: TextStyle(fontSize: 11, color: colors.textSecondary)),
           ),
-          const Expanded(child: Divider(color: Colors.white10)),
+          Expanded(child: Divider(color: colors.divider)),
         ],
       ),
     );
@@ -311,6 +314,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
   Widget _buildBubble(Message msg, bool isMe) {
     final failed = msg.isOptimistic;
+    final colors = AppColors.of(context);
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -325,7 +329,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               ? (failed
                   ? Colors.redAccent.withValues(alpha: 0.3)
                   : AppTheme.accentIndigo)
-              : AppTheme.surface,
+              : colors.surface,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -341,7 +345,8 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               msg.content,
               style: TextStyle(
                 fontSize: 14,
-                color: isMe ? Colors.white : Colors.white.withValues(alpha: 0.9),
+                // свои сообщения — белый текст на indigo всегда; чужие — из темы
+                color: isMe ? Colors.white : colors.textPrimary,
               ),
             ),
             const SizedBox(height: 3),
@@ -354,7 +359,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                     fontSize: 10,
                     color: isMe
                         ? Colors.white.withValues(alpha: 0.6)
-                        : Colors.white38,
+                        : colors.textSecondary,
                   ),
                 ),
                 if (isMe) ...[
@@ -376,6 +381,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   }
 
   Widget _buildInputArea() {
+    final colors = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Row(
@@ -383,15 +389,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           Expanded(
             child: TextField(
               controller: _inputController,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: colors.textPrimary, fontSize: 14),
               maxLines: null,
               textInputAction: TextInputAction.send,
               onSubmitted: (_) => _sendMessage(),
               decoration: InputDecoration(
                 hintText: "Напишите что-нибудь...",
-                hintStyle: const TextStyle(color: Colors.white24, fontSize: 14),
+                hintStyle: TextStyle(color: colors.textSecondary, fontSize: 14),
                 filled: true,
-                fillColor: AppTheme.surface,
+                fillColor: colors.surface,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 border: OutlineInputBorder(

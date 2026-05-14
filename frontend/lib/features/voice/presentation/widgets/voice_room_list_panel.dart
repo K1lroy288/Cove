@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../../../core/theme/app_theme.dart';
+import '../../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../data/models/voice_room.dart';
 import '../../data/services/voice_service.dart';
@@ -71,20 +71,21 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
     if (token == null) return;
 
     final controller = TextEditingController();
+    final colors = AppColors.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text('Новая комната'),
+        backgroundColor: colors.surface,
+        title: Text('Новая комната', style: TextStyle(color: colors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Название комнаты',
-            hintStyle: const TextStyle(color: Colors.white38),
+            hintStyle: TextStyle(color: colors.textSecondary),
             filled: true,
-            fillColor: AppTheme.darkBg,
+            fillColor: colors.bg,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -95,7 +96,7 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Отмена', style: TextStyle(color: Colors.white38)),
+            child: Text('Отмена', style: TextStyle(color: colors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -132,12 +133,13 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
-      color: AppTheme.darkBg,
+      color: colors.bg,
       child: Column(
         children: [
           _buildHeader(),
-          const Divider(height: 1, color: Colors.white10),
+          Divider(height: 1, color: colors.divider),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -145,17 +147,18 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
   }
 
   Widget _buildHeader() {
+    final colors = AppColors.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 8, 12),
       child: Row(
         children: [
-          const Text(
+          Text(
             'Голосовые комнаты',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: colors.textPrimary),
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: Colors.white38),
+            icon: Icon(Icons.refresh, size: 20, color: colors.textSecondary),
             onPressed: () {
               setState(() => _isLoading = true);
               _loadRooms();
@@ -178,20 +181,22 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
               strokeWidth: 2, color: AppTheme.accentIndigo));
     }
 
+    final colors = AppColors.of(context);
+
     if (_rooms.isEmpty) {
       return Center(
         child: Opacity(
           opacity: 0.35,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.graphic_eq, size: 48, color: Colors.white),
-              SizedBox(height: 12),
+            children: [
+              Icon(Icons.graphic_eq, size: 48, color: colors.textPrimary),
+              const SizedBox(height: 12),
               Text('Нет активных комнат',
-                  style: TextStyle(fontSize: 14, color: Colors.white)),
-              SizedBox(height: 6),
+                  style: TextStyle(fontSize: 14, color: colors.textPrimary)),
+              const SizedBox(height: 6),
               Text('Нажмите + чтобы создать',
-                  style: TextStyle(fontSize: 12, color: Colors.white)),
+                  style: TextStyle(fontSize: 12, color: colors.textPrimary)),
             ],
           ),
         ),
@@ -202,7 +207,7 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: _rooms.length,
       separatorBuilder: (_, _) =>
-          const Divider(height: 1, color: Colors.white10, indent: 16),
+          Divider(height: 1, color: colors.divider, indent: 16),
       itemBuilder: (context, index) => _buildRoomTile(_rooms[index]),
     );
   }
@@ -211,6 +216,7 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
     final voice = context.watch<VoiceNotifier>();
     final isCurrentRoom = voice.currentRoom?.id == room.id;
     final isJoining = _joiningRoomId == room.id;
+    final colors = AppColors.of(context);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -220,12 +226,12 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
         decoration: BoxDecoration(
           color: isCurrentRoom
               ? Colors.greenAccent.withValues(alpha: 0.15)
-              : AppTheme.surface,
+              : colors.surface,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(
           Icons.graphic_eq,
-          color: isCurrentRoom ? Colors.greenAccent : Colors.white38,
+          color: isCurrentRoom ? Colors.greenAccent : colors.textSecondary,
           size: 20,
         ),
       ),
@@ -233,12 +239,12 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
         room.name,
         style: TextStyle(
           fontWeight: FontWeight.w600,
-          color: isCurrentRoom ? Colors.greenAccent : Colors.white,
+          color: isCurrentRoom ? Colors.greenAccent : colors.textPrimary,
         ),
       ),
       subtitle: Text(
         '${room.members.length} участн.',
-        style: const TextStyle(fontSize: 12, color: Colors.white38),
+        style: TextStyle(fontSize: 12, color: colors.textSecondary),
       ),
       trailing: isCurrentRoom
           ? Container(
