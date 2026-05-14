@@ -15,11 +15,11 @@ import (
 
 type FriendshipHandler struct {
 	service *service.FriendshipService
-	userHub *UserHub
+	appHub  *AppHub
 }
 
-func NewFriendshipHandler(s *service.FriendshipService, userHub *UserHub) *FriendshipHandler {
-	return &FriendshipHandler{service: s, userHub: userHub}
+func NewFriendshipHandler(s *service.FriendshipService, appHub *AppHub) *FriendshipHandler {
+	return &FriendshipHandler{service: s, appHub: appHub}
 }
 
 // currentUserID извлекает user_id из контекста (установлен JWT middleware).
@@ -114,7 +114,7 @@ func (h *FriendshipHandler) CreateFriendship(ctx *gin.Context) {
 		FromUserID: senderID,
 		Username:   username,
 	}); err == nil {
-		h.userHub.NotifyUser(req.FriendID, n)
+		h.appHub.NotifyUser(req.FriendID, n)
 	}
 
 	ctx.Status(http.StatusCreated)
@@ -165,7 +165,7 @@ func (h *FriendshipHandler) RespondToFriendRequest(ctx *gin.Context) {
 			ByUserID: receiverID,
 			Username: username,
 		}); err == nil {
-			h.userHub.NotifyUser(uint(senderID), n)
+			h.appHub.NotifyUser(uint(senderID), n)
 		}
 	}
 

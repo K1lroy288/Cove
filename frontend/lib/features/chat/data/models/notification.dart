@@ -35,6 +35,32 @@ class NewMessageNotification {
   }
 }
 
+class ChatMessageNotification {
+  final int id;
+  final int chatId;
+  final int senderId;
+  final String content;
+  final DateTime createdAt;
+
+  ChatMessageNotification({
+    required this.id,
+    required this.chatId,
+    required this.senderId,
+    required this.content,
+    required this.createdAt,
+  });
+
+  factory ChatMessageNotification.fromPayload(Map<String, dynamic> p) {
+    return ChatMessageNotification(
+      id: (p['id'] as num).toInt(),
+      chatId: (p['chat_id'] as num).toInt(),
+      senderId: (p['sender_id'] as num).toInt(),
+      content: p['content'] as String,
+      createdAt: DateTime.parse(p['created_at'] as String),
+    );
+  }
+}
+
 class FriendRequestNotification {
   final int fromUserId;
   final String username;

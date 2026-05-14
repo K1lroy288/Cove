@@ -9,9 +9,12 @@ import '../data/services/global_ws_service.dart';
 class NotificationNotifier extends ChangeNotifier {
   final GlobalWsService _wsService = GlobalWsService();
   StreamSubscription<AppNotification>? _sub;
+  String? _token;
+
+  final StreamController<ChatMessageNotification> _chatMsgController =
+      StreamController.broadcast();
   final StreamController<NewMessageNotification> _msgController =
       StreamController.broadcast();
-
   final StreamController<FriendRequestNotification> _friendReqController =
       StreamController.broadcast();
   final StreamController<void> _friendAcceptedController =
@@ -19,6 +22,7 @@ class NotificationNotifier extends ChangeNotifier {
 
   int _pendingRequestCount = 0;
   int get pendingRequestCount => _pendingRequestCount;
+  Stream<ChatMessageNotification> get chatMessageStream => _chatMsgController.stream;
   Stream<NewMessageNotification> get messageStream => _msgController.stream;
   Stream<FriendRequestNotification> get friendRequestStream => _friendReqController.stream;
   Stream<void> get friendAcceptedStream => _friendAcceptedController.stream;
@@ -26,12 +30,23 @@ class NotificationNotifier extends ChangeNotifier {
   static const String _baseUrl = 'http://localhost:3425';
 
   Future<void> connect(String token) async {
+    _token = token;
     await _sub?.cancel();
     await _fetchInitialCount(token);
-    _sub = _wsService.connect(token).listen(
+    _subscribe();
+  }
+
+  void _subscribe() {
+    if (_token == null) return;
+    _sub = _wsService.connect(_token!).listen(
       _onNotification,
       onError: (e) => log('notification ws error: $e'),
-      onDone: () => log('notification ws closed'),
+      onDone: () {
+        log('notification ws closed, reconnecting in 3s');
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_token != null) _subscribe();
+        });
+      },
     );
   }
 
@@ -53,6 +68,8 @@ class NotificationNotifier extends ChangeNotifier {
 
   void _onNotification(AppNotification n) {
     switch (n.type) {
+      case 'chat_message':
+        _chatMsgController.add(ChatMessageNotification.fromPayload(n.payload));
       case 'new_message':
         _msgController.add(NewMessageNotification.fromPayload(n.payload));
       case 'friend_request':
@@ -64,6 +81,12 @@ class NotificationNotifier extends ChangeNotifier {
     }
   }
 
+  void subscribeToChat(int chatId) =>
+      _wsService.send({'type': 'subscribe_chat', 'chat_id': chatId});
+
+  void unsubscribeFromChat(int chatId) =>
+      _wsService.send({'type': 'unsubscribe_chat', 'chat_id': chatId});
+
   void decrementPendingCount() {
     if (_pendingRequestCount > 0) {
       _pendingRequestCount = 0;
@@ -72,6 +95,7 @@ class NotificationNotifier extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _token = null;
     await _sub?.cancel();
     _wsService.disconnect();
     _pendingRequestCount = 0;
@@ -80,8 +104,10 @@ class NotificationNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _token = null;
     _sub?.cancel();
     _wsService.disconnect();
+    _chatMsgController.close();
     _msgController.close();
     _friendReqController.close();
     _friendAcceptedController.close();

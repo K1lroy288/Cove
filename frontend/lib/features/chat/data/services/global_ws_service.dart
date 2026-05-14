@@ -21,6 +21,10 @@ class GlobalWsService {
     });
   }
 
+  void send(Map<String, dynamic> message) {
+    _channel?.sink.add(jsonEncode(message));
+  }
+
   void disconnect() {
     _channel?.sink.close();
     _channel = null;

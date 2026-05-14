@@ -38,23 +38,21 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService)
 
-	hub := handler.NewHub()
-	go hub.Run()
+	messageRepo := repository.NewMessageRepository(db)
+	messageService := service.NewMessageService(messageRepo)
 
-	userHub := handler.NewUserHub()
-	go userHub.Run()
+	appHub := handler.NewAppHub(messageService.IsChatMember)
+	go appHub.Run()
 
 	friendshipRepo := repository.NewFriendshipRepository(db)
 	friendshipService := service.NewFriendshipService(friendshipRepo)
-	friendshipHandler := handler.NewFriendshipHandler(friendshipService, userHub)
+	friendshipHandler := handler.NewFriendshipHandler(friendshipService, appHub)
 
 	chatRepo := repository.NewChatRepository(db)
 	chatService := service.NewChatService(chatRepo)
 	chatHandler := handler.NewChatHandler(chatService)
 
-	messageRepo := repository.NewMessageRepository(db)
-	messageService := service.NewMessageService(messageRepo)
-	messageHandler := handler.NewMessageHandler(messageService, hub, userHub)
+	messageHandler := handler.NewMessageHandler(messageService, appHub)
 
 	r := gin.Default()
 
@@ -70,8 +68,6 @@ func main() {
 	}
 
 	// ── Users (без токена) ───────────────────────────────────────────────────────
-	// Маршруты зарегистрированы в строгом порядке: /search и /username/:u до /:id,
-	// иначе Gin захватит их как path param.
 	user := r.Group("/user")
 	{
 		user.GET("/search", userHandler.SearchUser)
@@ -102,8 +98,7 @@ func main() {
 	}
 
 	// WS без JWT middleware — токен передаётся через query-параметр ?token=
-	r.GET("/chat/:id/ws", messageHandler.ServeWS)
-	r.GET("/ws", userHub.ServeWS)
+	r.GET("/ws", appHub.ServeWS)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	r.Run(addr)

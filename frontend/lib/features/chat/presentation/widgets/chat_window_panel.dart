@@ -6,8 +6,9 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
+import '../../data/models/notification.dart';
 import '../../data/services/chat_service.dart';
-import '../../data/services/ws_service.dart';
+import '../notification_notifier.dart';
 
 class ChatWindowPanel extends StatefulWidget {
   final Chat chat;
@@ -22,11 +23,10 @@ class ChatWindowPanel extends StatefulWidget {
 
 class _ChatWindowPanelState extends State<ChatWindowPanel> {
   final ChatService _api = ChatService();
-  final WsService _wsService = WsService();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  StreamSubscription<Message>? _wsSub;
+  StreamSubscription<ChatMessageNotification>? _chatSub;
   Timer? _minuteTimer;
   List<Message> _messages = [];
   bool _isLoading = true;
@@ -37,7 +37,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   void initState() {
     super.initState();
     _loadMessages();
-    _connectWS();
+    _subscribeToChat(widget.chat.id);
     _minuteTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) { if (mounted) setState(() {}); },
@@ -48,51 +48,49 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   void didUpdateWidget(ChatWindowPanel old) {
     super.didUpdateWidget(old);
     if (old.chat.id != widget.chat.id) {
-      _wsSub?.cancel();
-      _wsService.disconnect();
+      final notif = context.read<NotificationNotifier>();
+      notif.unsubscribeFromChat(old.chat.id);
+      _chatSub?.cancel();
       setState(() {
         _messages = [];
         _isLoading = true;
       });
       _loadMessages();
-      _connectWS();
+      _subscribeToChat(widget.chat.id);
     }
   }
 
   @override
   void dispose() {
-    _wsSub?.cancel();
+    context.read<NotificationNotifier>().unsubscribeFromChat(widget.chat.id);
+    _chatSub?.cancel();
     _minuteTimer?.cancel();
-    _wsService.disconnect();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _connectWS() {
-    final auth = context.read<AuthNotifier>();
-    if (auth.token == null) return;
+  void _subscribeToChat(int chatId) {
+    final notif = context.read<NotificationNotifier>();
+    notif.subscribeToChat(chatId);
+    _chatSub = notif.chatMessageStream
+        .where((m) => m.chatId == chatId)
+        .listen(_onIncomingMessage, onError: (e) => log('chat ws error: $e'));
+  }
 
-    _wsSub = _wsService
-        .connect(widget.chat.id, auth.token!)
-        .listen(
-          (msg) {
-            if (!mounted) return;
-            // Дедупликация: sender получает сообщение и по REST и по WS
-            if (_messages.any((m) => m.id == msg.id)) return;
-            setState(() => _messages.add(msg));
-            _scrollToBottom();
-          },
-          onError: (Object e) => log('ws error: $e'),
-          onDone: () {
-            log('ws closed for chat ${widget.chat.id}');
-            if (mounted) {
-              Future.delayed(const Duration(seconds: 3), () {
-                if (mounted) _connectWS();
-              });
-            }
-          },
-        );
+  void _onIncomingMessage(ChatMessageNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages.add(Message(
+        id: n.id,
+        chatId: n.chatId,
+        senderId: n.senderId,
+        content: n.content,
+        createdAt: n.createdAt,
+      ));
+      _messages.sort((a, b) => a.id.compareTo(b.id));
+    });
+    _scrollToBottom();
   }
 
   Future<void> _loadMessages() async {
@@ -107,10 +105,10 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     if (mounted) {
       setState(() {
         final loadedIds = msgs.map((m) => m.id).toSet();
-        final wsExtras = _messages
+        final extras = _messages
             .where((m) => m.id > 0 && !loadedIds.contains(m.id))
             .toList();
-        _messages = [...msgs, ...wsExtras]
+        _messages = [...msgs, ...extras]
           ..sort((a, b) => a.id.compareTo(b.id));
         _isLoading = false;
       });
@@ -141,7 +139,6 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     _inputController.clear();
     setState(() => _isSending = true);
 
-    // Optimistic insert
     final tempId = _optimisticCounter--;
     final optimistic = Message(
       id: tempId,
@@ -164,8 +161,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       setState(() {
         _isSending = false;
         if (sent != null) {
-          // Удаляем оптимистичное и WS-дубликат (если broadcast пришёл раньше REST)
-          _messages.removeWhere((m) => m.id == sent.id || m.id == tempId);
+          _messages.removeWhere((m) => m.id == tempId);
           _messages.add(sent);
           _messages.sort((a, b) => a.id.compareTo(b.id));
           widget.onMessageSent?.call(sent);
