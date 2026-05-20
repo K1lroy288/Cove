@@ -116,15 +116,19 @@ func (h *MessageHandler) SendMessage(ctx *gin.Context) {
 		}
 	}
 
-	// Уведомляем партнёра для обновления chat-list
-	if partnerID, err := h.service.GetPartnerID(chatID, userID); err == nil {
+	// Уведомляем всех участников чата для обновления chat-list (работает и для DM и для групп)
+	if memberIDs, err := h.service.GetChatMemberIDs(chatID); err == nil {
 		if n, err := dto.NewNotification("new_message", dto.NewMessagePayload{
 			ChatID:    chatID,
 			SenderID:  userID,
 			Content:   req.Content,
 			CreatedAt: msg.CreatedAt,
 		}); err == nil {
-			h.appHub.NotifyUser(partnerID, n)
+			for _, mid := range memberIDs {
+				if mid != userID {
+					h.appHub.NotifyUser(mid, n)
+				}
+			}
 		}
 	}
 

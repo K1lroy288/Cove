@@ -50,7 +50,7 @@ func main() {
 
 	chatRepo := repository.NewChatRepository(db)
 	chatService := service.NewChatService(chatRepo)
-	chatHandler := handler.NewChatHandler(chatService)
+	chatHandler := handler.NewChatHandler(chatService, appHub)
 
 	messageHandler := handler.NewMessageHandler(messageService, appHub)
 
@@ -99,6 +99,20 @@ func main() {
 		chat.POST("/", chatHandler.CreateChat)
 		chat.GET("/:id/messages", messageHandler.GetMessages)
 		chat.POST("/:id/messages", messageHandler.SendMessage)
+	}
+
+	// ── Groups (требует JWT) ─────────────────────────────────────────────────────
+	groups := r.Group("/groups")
+	groups.Use(middleware.JWTAuth())
+	{
+		groups.POST("/", chatHandler.CreateGroup)
+		groups.GET("/:id/members", chatHandler.GetGroupMembers)
+		groups.POST("/:id/members", chatHandler.AddMembers)
+		groups.DELETE("/:id/members/:uid", chatHandler.KickMember)
+		groups.DELETE("/:id/leave", chatHandler.LeaveGroup)
+		groups.DELETE("/:id", chatHandler.DeleteGroup)
+		groups.PATCH("/:id", chatHandler.UpdateGroup)
+		groups.PATCH("/:id/members/:uid/role", chatHandler.SetMemberRole)
 	}
 
 	// ── Settings (требует JWT) ───────────────────────────────────────────────────

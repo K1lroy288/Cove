@@ -27,6 +27,38 @@ type FriendAcceptedPayload struct {
 	Username string `json:"username"`
 }
 
+type GroupCreatedPayload struct {
+	ChatID      uint   `json:"chat_id"`
+	GroupName   string `json:"group_name"`
+	GroupAvatar string `json:"group_avatar"`
+	CreatedBy   uint   `json:"created_by"`
+}
+
+type GroupUpdatedPayload struct {
+	ChatID uint   `json:"chat_id"`
+	Name   string `json:"name"`
+	Avatar string `json:"avatar"`
+}
+
+// MemberChangedPayload используется для member_added и member_removed.
+// Reason: "added" | "kicked" | "left"
+type MemberChangedPayload struct {
+	ChatID   uint   `json:"chat_id"`
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+	Reason   string `json:"reason"`
+}
+
+type GroupDissolvedPayload struct {
+	ChatID uint `json:"chat_id"`
+}
+
+type RoleChangedPayload struct {
+	ChatID  uint   `json:"chat_id"`
+	UserID  uint   `json:"user_id"`
+	NewRole string `json:"new_role"`
+}
+
 func NewNotification(typeName string, payload any) (NotificationDTO, error) {
 	raw, err := json.Marshal(payload)
 	if err != nil {

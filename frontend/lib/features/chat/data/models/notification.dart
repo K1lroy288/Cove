@@ -74,3 +74,102 @@ class FriendRequestNotification {
     );
   }
 }
+
+class GroupCreatedNotification {
+  final int chatId;
+  final String groupName;
+  final String groupAvatar;
+  final int createdBy;
+
+  GroupCreatedNotification({
+    required this.chatId,
+    required this.groupName,
+    required this.groupAvatar,
+    required this.createdBy,
+  });
+
+  factory GroupCreatedNotification.fromPayload(Map<String, dynamic> p) {
+    return GroupCreatedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      groupName: (p['group_name'] as String?) ?? '',
+      groupAvatar: (p['group_avatar'] as String?) ?? '',
+      createdBy: (p['created_by'] as num).toInt(),
+    );
+  }
+}
+
+class GroupUpdatedNotification {
+  final int chatId;
+  final String name;
+  final String avatar;
+
+  GroupUpdatedNotification({
+    required this.chatId,
+    required this.name,
+    required this.avatar,
+  });
+
+  factory GroupUpdatedNotification.fromPayload(Map<String, dynamic> p) {
+    return GroupUpdatedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      name: (p['name'] as String?) ?? '',
+      avatar: (p['avatar'] as String?) ?? '',
+    );
+  }
+}
+
+// reason: 'added' | 'kicked' | 'left'
+class MemberChangedNotification {
+  final int chatId;
+  final int userId;
+  final String username;
+  final String reason;
+
+  MemberChangedNotification({
+    required this.chatId,
+    required this.userId,
+    required this.username,
+    required this.reason,
+  });
+
+  factory MemberChangedNotification.fromPayload(Map<String, dynamic> p) {
+    return MemberChangedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      userId: (p['user_id'] as num).toInt(),
+      username: (p['username'] as String?) ?? '',
+      reason: (p['reason'] as String?) ?? '',
+    );
+  }
+}
+
+class GroupDissolvedNotification {
+  final int chatId;
+
+  GroupDissolvedNotification({required this.chatId});
+
+  factory GroupDissolvedNotification.fromPayload(Map<String, dynamic> p) {
+    return GroupDissolvedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+    );
+  }
+}
+
+class RoleChangedNotification {
+  final int chatId;
+  final int userId;
+  final String newRole;
+
+  RoleChangedNotification({
+    required this.chatId,
+    required this.userId,
+    required this.newRole,
+  });
+
+  factory RoleChangedNotification.fromPayload(Map<String, dynamic> p) {
+    return RoleChangedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      userId: (p['user_id'] as num).toInt(),
+      newRole: (p['new_role'] as String?) ?? '',
+    );
+  }
+}

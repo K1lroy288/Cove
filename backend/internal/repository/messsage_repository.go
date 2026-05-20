@@ -67,7 +67,7 @@ func (r *MessageRepository) IsChatMember(chatID, userID uint) (bool, error) {
 	return count > 0, err
 }
 
-// GetPartnerID возвращает ID второго участника чата.
+// GetPartnerID возвращает ID второго участника DM-чата.
 func (r *MessageRepository) GetPartnerID(chatID, senderID uint) (uint, error) {
 	var partnerID uint
 	err := r.DB.Table("chat_members").
@@ -82,4 +82,13 @@ func (r *MessageRepository) GetPartnerID(chatID, senderID uint) (uint, error) {
 		return 0, fmt.Errorf("partner not found for chat %d", chatID)
 	}
 	return partnerID, nil
+}
+
+// GetChatMemberIDs возвращает всех участников чата (работает и для DM и для групп).
+func (r *MessageRepository) GetChatMemberIDs(chatID uint) ([]uint, error) {
+	var ids []uint
+	err := r.DB.Table("chat_members").
+		Where("chat_id = ?", chatID).
+		Pluck("user_id", &ids).Error
+	return ids, err
 }

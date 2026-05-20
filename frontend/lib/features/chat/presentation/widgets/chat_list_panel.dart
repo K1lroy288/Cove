@@ -10,6 +10,8 @@ import '../../../user/data/models/user_dto.dart';
 import '../../../user/data/services/user_service.dart';
 import '../../data/models/chat.dart';
 import '../../data/services/chat_service.dart';
+import '../notification_notifier.dart';
+import 'create_group_sheet.dart';
 
 enum _Tab { chats, requests }
 
@@ -38,6 +40,9 @@ class _ChatListPanelState extends State<ChatListPanel> {
   bool _isSendingRequest = false;
   String? _errorMessage;
 
+  StreamSubscription? _groupCreatedSub;
+  StreamSubscription? _groupDissolvedSub;
+
   Timer? _minuteTimer;
   List<Chat> _chats = [];
   bool _isLoadingChats = true;
@@ -62,10 +67,28 @@ class _ChatListPanelState extends State<ChatListPanel> {
       const Duration(minutes: 1),
       (_) { if (mounted) setState(() {}); },
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _subscribeToGroupEvents());
+  }
+
+  void _subscribeToGroupEvents() {
+    final notifier = context.read<NotificationNotifier>();
+
+    _groupCreatedSub = notifier.groupCreatedStream.listen((event) {
+      if (!mounted) return;
+      // Перезагружаем список чтобы получить полный ChatDTO от сервера
+      _loadChats();
+    });
+
+    _groupDissolvedSub = notifier.groupDissolvedStream.listen((event) {
+      if (!mounted) return;
+      setState(() => _chats.removeWhere((c) => c.id == event.chatId));
+    });
   }
 
   @override
   void dispose() {
+    _groupCreatedSub?.cancel();
+    _groupDissolvedSub?.cancel();
     _minuteTimer?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -73,6 +96,22 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
   void reload() => _loadChats();
   void refreshPendingRequests() => _loadPendingRequests();
+
+  void _openCreateGroupSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CreateGroupSheet(
+        onCreated: (group) {
+          setState(() {
+            _chats.insert(0, group);
+          });
+          widget.onChatSelected(group);
+        },
+      ),
+    );
+  }
 
   void updateChatMessage(int chatId, String content, DateTime time) {
     final idx = _chats.indexWhere((c) => c.id == chatId);
@@ -263,6 +302,11 @@ class _ChatListPanelState extends State<ChatListPanel> {
                         fontWeight: FontWeight.bold,
                         color: colors.textPrimary)),
                 const Spacer(),
+                IconButton(
+                  icon: Icon(Icons.group_add_outlined, color: colors.textSecondary),
+                  tooltip: "Создать группу",
+                  onPressed: _openCreateGroupSheet,
+                ),
                 IconButton(
                     icon: Icon(Icons.edit_note, color: colors.textSecondary),
                     onPressed: () {}),
@@ -497,26 +541,67 @@ class _ChatListPanelState extends State<ChatListPanel> {
   }
 
   Widget _buildChatTile(Chat chat) {
-    final initial = chat.partnerName.isNotEmpty
-        ? chat.partnerName[0].toUpperCase()
-        : '?';
     final colors = AppColors.of(context);
+    final avatarColor =
+        chat.isGroup ? Colors.teal : AppTheme.accentIndigo;
+    final avatarBg = avatarColor.withValues(alpha: 0.2);
 
     return ListTile(
       onTap: () => widget.onChatSelected(chat),
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: CircleAvatar(
-        radius: 24,
-        backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
-        child: Text(
-          initial,
-          style: const TextStyle(
-              color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
-        ),
+      leading: Stack(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: avatarBg,
+            child: Text(
+              chat.avatarInitial,
+              style: TextStyle(
+                  color: avatarColor, fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (chat.isGroup)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: CircleAvatar(
+                radius: 9,
+                backgroundColor: colors.bg,
+                child: Icon(Icons.group, size: 12, color: Colors.teal),
+              ),
+            ),
+        ],
       ),
-      title: Text(chat.partnerName,
-          style: TextStyle(fontWeight: FontWeight.w600, color: colors.textPrimary)),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              chat.displayName,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontWeight: FontWeight.w600, color: colors.textPrimary),
+            ),
+          ),
+          if (chat.unreadCount > 0)
+            Container(
+              margin: const EdgeInsets.only(left: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppTheme.accentIndigo,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${chat.unreadCount}',
+                style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+        ],
+      ),
       subtitle: chat.lastMessage != null
           ? Text(
               chat.lastMessage!,

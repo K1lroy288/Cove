@@ -20,12 +20,37 @@ class NotificationNotifier extends ChangeNotifier {
   final StreamController<void> _friendAcceptedController =
       StreamController.broadcast();
 
+  // Групповые события
+  final StreamController<GroupCreatedNotification> _groupCreatedController =
+      StreamController.broadcast();
+  final StreamController<GroupUpdatedNotification> _groupUpdatedController =
+      StreamController.broadcast();
+  final StreamController<MemberChangedNotification> _memberChangedController =
+      StreamController.broadcast();
+  final StreamController<GroupDissolvedNotification> _groupDissolvedController =
+      StreamController.broadcast();
+  final StreamController<RoleChangedNotification> _roleChangedController =
+      StreamController.broadcast();
+
   int _pendingRequestCount = 0;
   int get pendingRequestCount => _pendingRequestCount;
-  Stream<ChatMessageNotification> get chatMessageStream => _chatMsgController.stream;
+
+  Stream<ChatMessageNotification> get chatMessageStream =>
+      _chatMsgController.stream;
   Stream<NewMessageNotification> get messageStream => _msgController.stream;
-  Stream<FriendRequestNotification> get friendRequestStream => _friendReqController.stream;
+  Stream<FriendRequestNotification> get friendRequestStream =>
+      _friendReqController.stream;
   Stream<void> get friendAcceptedStream => _friendAcceptedController.stream;
+  Stream<GroupCreatedNotification> get groupCreatedStream =>
+      _groupCreatedController.stream;
+  Stream<GroupUpdatedNotification> get groupUpdatedStream =>
+      _groupUpdatedController.stream;
+  Stream<MemberChangedNotification> get memberChangedStream =>
+      _memberChangedController.stream;
+  Stream<GroupDissolvedNotification> get groupDissolvedStream =>
+      _groupDissolvedController.stream;
+  Stream<RoleChangedNotification> get roleChangedStream =>
+      _roleChangedController.stream;
 
   static const String _baseUrl = 'http://localhost:3425';
 
@@ -78,6 +103,22 @@ class NotificationNotifier extends ChangeNotifier {
         notifyListeners();
       case 'friend_accepted':
         _friendAcceptedController.add(null);
+      case 'group_created':
+        _groupCreatedController
+            .add(GroupCreatedNotification.fromPayload(n.payload));
+      case 'group_updated':
+        _groupUpdatedController
+            .add(GroupUpdatedNotification.fromPayload(n.payload));
+      case 'member_added':
+      case 'member_removed':
+        _memberChangedController
+            .add(MemberChangedNotification.fromPayload(n.payload));
+      case 'group_dissolved':
+        _groupDissolvedController
+            .add(GroupDissolvedNotification.fromPayload(n.payload));
+      case 'role_changed':
+        _roleChangedController
+            .add(RoleChangedNotification.fromPayload(n.payload));
     }
   }
 
@@ -111,6 +152,11 @@ class NotificationNotifier extends ChangeNotifier {
     _msgController.close();
     _friendReqController.close();
     _friendAcceptedController.close();
+    _groupCreatedController.close();
+    _groupUpdatedController.close();
+    _memberChangedController.close();
+    _groupDissolvedController.close();
+    _roleChangedController.close();
     super.dispose();
   }
 }

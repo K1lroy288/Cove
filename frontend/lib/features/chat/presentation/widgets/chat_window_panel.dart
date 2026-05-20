@@ -9,6 +9,7 @@ import '../../data/models/message.dart';
 import '../../data/models/notification.dart';
 import '../../data/services/chat_service.dart';
 import '../notification_notifier.dart';
+import 'group_info_sheet.dart';
 
 class ChatWindowPanel extends StatefulWidget {
   final Chat chat;
@@ -193,6 +194,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   }
 
   Widget _buildHeader() {
+    final chat = widget.chat;
+    final colors = AppColors.of(context);
+    final isGroup = chat.isGroup;
+    final avatarColor = isGroup ? Colors.teal : AppTheme.accentIndigo;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Row(
@@ -203,35 +209,68 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           ),
           CircleAvatar(
             radius: 18,
-            backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+            backgroundColor: avatarColor.withValues(alpha: 0.2),
             child: Text(
-              widget.chat.partnerName[0].toUpperCase(),
-              style: const TextStyle(
-                  color: AppTheme.accentIndigo,
+              chat.avatarInitial,
+              style: TextStyle(
+                  color: avatarColor,
                   fontSize: 14,
                   fontWeight: FontWeight.bold),
             ),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.chat.partnerName,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  chat.displayName,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15)),
-              const Text("в сети",
-                  style: TextStyle(color: Colors.greenAccent, fontSize: 11)),
-            ],
+                      fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                if (isGroup)
+                  Text(
+                    "${chat.memberCount ?? '?'} участников",
+                    style: TextStyle(
+                        color: colors.textSecondary, fontSize: 11),
+                  )
+                else
+                  const Text("в сети",
+                      style: TextStyle(
+                          color: Colors.greenAccent, fontSize: 11)),
+              ],
+            ),
           ),
-          const Spacer(),
+          if (isGroup)
+            IconButton(
+              icon: Icon(Icons.info_outline,
+                  size: 20, color: colors.textSecondary),
+              tooltip: "Информация о группе",
+              onPressed: _openGroupInfo,
+            ),
           IconButton(
-            icon: Icon(Icons.refresh, size: 20, color: AppColors.of(context).textSecondary),
+            icon: Icon(Icons.refresh,
+                size: 20, color: colors.textSecondary),
             onPressed: () {
               setState(() => _isLoading = true);
               _loadMessages();
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _openGroupInfo() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => GroupInfoSheet(
+        chat: widget.chat,
+        onGroupLeft: widget.onBack,
+        onGroupDeleted: widget.onBack,
       ),
     );
   }
