@@ -21,8 +21,9 @@ type Message struct {
 // ChatReadCursor хранит последнее прочитанное сообщение пользователя в чате.
 // Одна строка на (chat, user) вместо одной строки на каждое сообщение.
 type ChatReadCursor struct {
-	ChatID            uint      `gorm:"primaryKey;column:chat_id"`
-	UserID            uint      `gorm:"primaryKey;column:user_id"`
-	LastReadMessageID *uint     `gorm:"column:last_read_message_id"`
-	UpdatedAt         time.Time `gorm:"column:updated_at"`
+	ChatID                 uint      `gorm:"primaryKey;column:chat_id"`
+	UserID                 uint      `gorm:"primaryKey;column:user_id"`
+	LastReadMessageID      *uint     `gorm:"column:last_read_message_id"`
+	LastDeliveredMessageID *uint     `gorm:"column:last_delivered_message_id"`
+	UpdatedAt              time.Time `gorm:"column:updated_at"`
 }

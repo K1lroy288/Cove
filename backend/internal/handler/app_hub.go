@@ -47,33 +47,51 @@ type subMsg struct {
 	chatID uint
 }
 
+type presenceQueryMsg struct {
+	userIDs []uint
+	resp    chan map[uint]bool
+}
+
 // ── AppHub ────────────────────────────────────────────────────────────────────
 
 // AppHub управляет всеми WS-соединениями: уведомления (по userID) + чаты (по chatID).
 // Один экземпляр на весь сервер, работает в отдельной горутине.
 type AppHub struct {
-	users      map[uint]map[*AppClient]bool // user_id → клиенты
-	chats      map[uint]map[*AppClient]bool // chat_id → подписанные клиенты
-	broadcast  chan broadcastMsg            // рассылка в чат (кроме отправителя)
-	notify     chan notifyMsg               // личное уведомление пользователю
-	subscribe  chan subMsg
+	users       map[uint]map[*AppClient]bool // user_id → клиенты
+	chats       map[uint]map[*AppClient]bool // chat_id → подписанные клиенты
+	broadcast   chan broadcastMsg            // рассылка в чат (кроме отправителя)
+	notify      chan notifyMsg               // личное уведомление пользователю
+	subscribe   chan subMsg
 	unsubscribe chan subMsg
-	register   chan *AppClient
-	unregister chan *AppClient
-	isMember   func(chatID, userID uint) (bool, error)
+	register    chan *AppClient
+	unregister  chan *AppClient
+	isMember      func(chatID, userID uint) (bool, error)
+	markDelivered func(chatID, userID, messageID uint) (senderID uint, err error)
+	markRead      func(chatID, userID, messageID uint) (senderID uint, err error)
+	getFriendIDs  func(userID uint) ([]uint, error)
+	presenceQuery chan presenceQueryMsg
 }
 
-func NewAppHub(isMember func(chatID, userID uint) (bool, error)) *AppHub {
+func NewAppHub(
+	isMember func(chatID, userID uint) (bool, error),
+	markDelivered func(chatID, userID, messageID uint) (uint, error),
+	markRead func(chatID, userID, messageID uint) (uint, error),
+	getFriendIDs func(userID uint) ([]uint, error),
+) *AppHub {
 	return &AppHub{
-		users:       make(map[uint]map[*AppClient]bool),
-		chats:       make(map[uint]map[*AppClient]bool),
-		broadcast:   make(chan broadcastMsg, 256),
-		notify:      make(chan notifyMsg, 256),
-		subscribe:   make(chan subMsg, 32),
-		unsubscribe: make(chan subMsg, 32),
-		register:    make(chan *AppClient),
-		unregister:  make(chan *AppClient),
-		isMember:    isMember,
+		users:         make(map[uint]map[*AppClient]bool),
+		chats:         make(map[uint]map[*AppClient]bool),
+		broadcast:     make(chan broadcastMsg, 256),
+		notify:        make(chan notifyMsg, 256),
+		subscribe:     make(chan subMsg, 32),
+		unsubscribe:   make(chan subMsg, 32),
+		register:      make(chan *AppClient),
+		unregister:    make(chan *AppClient),
+		presenceQuery: make(chan presenceQueryMsg, 16),
+		isMember:      isMember,
+		markDelivered: markDelivered,
+		markRead:      markRead,
+		getFriendIDs:  getFriendIDs,
 	}
 }
 
@@ -81,10 +99,14 @@ func (h *AppHub) Run() {
 	for {
 		select {
 		case c := <-h.register:
-			if h.users[c.userID] == nil {
+			firstConn := h.users[c.userID] == nil
+			if firstConn {
 				h.users[c.userID] = make(map[*AppClient]bool)
 			}
 			h.users[c.userID][c] = true
+			if firstConn {
+				go h.broadcastPresence(c.userID, true)
+			}
 
 		case c := <-h.unregister:
 			if room, ok := h.users[c.userID]; ok {
@@ -93,6 +115,7 @@ func (h *AppHub) Run() {
 					close(c.send)
 					if len(room) == 0 {
 						delete(h.users, c.userID)
+						go h.broadcastPresence(c.userID, false)
 					}
 				}
 			}
@@ -144,7 +167,44 @@ func (h *AppHub) Run() {
 					}
 				}
 			}
+
+		case q := <-h.presenceQuery:
+			result := make(map[uint]bool, len(q.userIDs))
+			for _, id := range q.userIDs {
+				result[id] = len(h.users[id]) > 0
+			}
+			q.resp <- result
 		}
+	}
+}
+
+// IsOnlineMany возвращает карту userID → онлайн для запрошенных пользователей.
+func (h *AppHub) IsOnlineMany(userIDs []uint) map[uint]bool {
+	resp := make(chan map[uint]bool, 1)
+	h.presenceQuery <- presenceQueryMsg{userIDs: userIDs, resp: resp}
+	return <-resp
+}
+
+// broadcastPresence рассылает статус присутствия всем онлайн-друзьям пользователя.
+// Вызывается в отдельной горутине; NotifyUser — канальный и безопасен.
+func (h *AppHub) broadcastPresence(userID uint, online bool) {
+	if h.getFriendIDs == nil {
+		return
+	}
+	friendIDs, err := h.getFriendIDs(userID)
+	if err != nil {
+		log.Printf("broadcastPresence: getFriendIDs user=%d: %v", userID, err)
+		return
+	}
+	n, err := dto.NewNotification("user_presence", dto.UserPresencePayload{
+		UserID:   userID,
+		IsOnline: online,
+	})
+	if err != nil {
+		return
+	}
+	for _, fid := range friendIDs {
+		h.NotifyUser(fid, n)
 	}
 }
 
@@ -224,8 +284,9 @@ func (c *AppClient) readPump() {
 			break
 		}
 		var cmd struct {
-			Type   string `json:"type"`
-			ChatID uint   `json:"chat_id"`
+			Type      string `json:"type"`
+			ChatID    uint   `json:"chat_id"`
+			MessageID uint   `json:"message_id"`
 		}
 		if err := json.Unmarshal(msg, &cmd); err != nil {
 			continue
@@ -238,6 +299,38 @@ func (c *AppClient) readPump() {
 			}
 		case "unsubscribe_chat":
 			c.hub.unsubscribe <- subMsg{client: c, chatID: cmd.ChatID}
+		case "ack_delivered":
+			if cmd.ChatID == 0 || cmd.MessageID == 0 {
+				continue
+			}
+			senderID, err := c.hub.markDelivered(cmd.ChatID, c.userID, cmd.MessageID)
+			if err != nil {
+				log.Printf("mark delivered error user=%d msg=%d: %v", c.userID, cmd.MessageID, err)
+				continue
+			}
+			if n, err := dto.NewNotification("message_delivered", dto.MessageDeliveredPayload{
+				ChatID:      cmd.ChatID,
+				MessageID:   cmd.MessageID,
+				DeliveredAt: time.Now(),
+			}); err == nil {
+				c.hub.NotifyUser(senderID, n)
+			}
+		case "mark_read":
+			if cmd.ChatID == 0 || cmd.MessageID == 0 {
+				continue
+			}
+			senderID, err := c.hub.markRead(cmd.ChatID, c.userID, cmd.MessageID)
+			if err != nil {
+				log.Printf("mark read error user=%d msg=%d: %v", c.userID, cmd.MessageID, err)
+				continue
+			}
+			if n, err := dto.NewNotification("message_read", dto.MessageReadPayload{
+				ChatID:            cmd.ChatID,
+				LastReadMessageID: cmd.MessageID,
+				ReadAt:            time.Now(),
+			}); err == nil {
+				c.hub.NotifyUser(senderID, n)
+			}
 		}
 	}
 }

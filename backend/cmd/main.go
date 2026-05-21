@@ -35,17 +35,23 @@ func main() {
 	}
 
 	userRepo := repository.NewUserRepository(db)
-	userService := service.NewUserService(userRepo)
+	friendshipRepo := repository.NewFriendshipRepository(db)
+	userService := service.NewUserService(userRepo, friendshipRepo)
 	userHandler := handler.NewUserHandler(userService)
 
 	messageRepo := repository.NewMessageRepository(db)
 	messageService := service.NewMessageService(messageRepo)
 
-	appHub := handler.NewAppHub(messageService.IsChatMember)
+	friendshipService := service.NewFriendshipService(friendshipRepo)
+
+	appHub := handler.NewAppHub(
+		messageService.IsChatMember,
+		messageService.MarkDelivered,
+		messageService.MarkRead,
+		friendshipService.GetFriendIDs,
+	)
 	go appHub.Run()
 
-	friendshipRepo := repository.NewFriendshipRepository(db)
-	friendshipService := service.NewFriendshipService(friendshipRepo)
 	friendshipHandler := handler.NewFriendshipHandler(friendshipService, appHub)
 
 	chatRepo := repository.NewChatRepository(db)
@@ -77,6 +83,18 @@ func main() {
 		user.GET("/search", userHandler.SearchUser)
 		user.GET("/username/:username", userHandler.FindUserByUsername)
 		user.GET("/:id", userHandler.FindUserByID)
+	}
+
+	// ── User profile (требует JWT) ───────────────────────────────────────────────
+	userAuth := r.Group("/user")
+	userAuth.Use(middleware.JWTAuth())
+	{
+		userAuth.GET("/presence", handler.GetPresence(appHub))
+		userAuth.GET("/me", userHandler.GetMe)
+		userAuth.PATCH("/me", userHandler.UpdateMe)
+		userAuth.POST("/me/password", userHandler.ChangePassword)
+		userAuth.DELETE("/me", userHandler.DeleteMe)
+		userAuth.GET("/:id/profile", userHandler.GetUserProfile)
 	}
 
 	// ── Friendship (требует JWT) ──────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../../../features/chat/data/models/chat.dart';
 import '../../../../features/chat/data/services/chat_service.dart';
+import '../../../../features/chat/presentation/notification_notifier.dart';
+import '../../../../features/user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/friend.dart';
 import '../../data/services/friendship_service.dart';
 
@@ -67,6 +69,15 @@ class _FriendsPanelState extends State<FriendsPanel> {
         _friends = friends;
         _isLoading = false;
       });
+      if (friends.isNotEmpty) {
+        final token = context.read<AuthNotifier>().token;
+        if (token != null) {
+          context.read<NotificationNotifier>().fetchPresence(
+            friends.map((f) => f.id).toList(),
+            token,
+          );
+        }
+      }
     }
   }
 
@@ -245,6 +256,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
         ? friend.username[0].toUpperCase()
         : '?';
     final appColors = AppColors.of(context);
+    final online = context.watch<NotificationNotifier>().isOnline(friend.id);
 
     // Случайный, но стабильный цвет на основе ID
     final palette = [
@@ -258,6 +270,11 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      onTap: () => UserProfileSheet.show(
+        context,
+        friend.id,
+        onOpenChat: widget.onOpenChat,
+      ),
       leading: Stack(
         children: [
           CircleAvatar(
@@ -272,19 +289,20 @@ class _FriendsPanelState extends State<FriendsPanel> {
               ),
             ),
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 11,
-              height: 11,
-              decoration: BoxDecoration(
-                color: Colors.grey,
-                shape: BoxShape.circle,
-                border: Border.all(color: appColors.bg, width: 2),
+          if (online)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4CAF50),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: appColors.bg, width: 2),
+                ),
               ),
             ),
-          ),
         ],
       ),
       title: Text(
@@ -292,8 +310,11 @@ class _FriendsPanelState extends State<FriendsPanel> {
         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: appColors.textPrimary),
       ),
       subtitle: Text(
-        'Не в сети',
-        style: TextStyle(fontSize: 12, color: appColors.textSecondary),
+        online ? 'В сети' : 'Не в сети',
+        style: TextStyle(
+          fontSize: 12,
+          color: online ? const Color(0xFF4CAF50) : appColors.textSecondary,
+        ),
       ),
       trailing: isOpening
           ? const SizedBox(

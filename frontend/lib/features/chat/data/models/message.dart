@@ -1,3 +1,5 @@
+enum MessageStatus { sent, delivered, read }
+
 class Message {
   final int id;
   final int chatId;
@@ -6,6 +8,7 @@ class Message {
   final String type;
   final DateTime createdAt;
   final bool isOptimistic;
+  final MessageStatus status;
 
   const Message({
     required this.id,
@@ -15,6 +18,7 @@ class Message {
     this.type = 'text',
     required this.createdAt,
     this.isOptimistic = false,
+    this.status = MessageStatus.sent,
   });
 
   factory Message.fromJson(Map<String, dynamic> json) {
@@ -28,7 +32,7 @@ class Message {
     );
   }
 
-  Message copyWith({bool? isOptimistic}) {
+  Message copyWith({bool? isOptimistic, MessageStatus? status}) {
     return Message(
       id: id,
       chatId: chatId,
@@ -37,6 +41,7 @@ class Message {
       type: type,
       createdAt: createdAt,
       isOptimistic: isOptimistic ?? this.isOptimistic,
+      status: status ?? this.status,
     );
   }
 }

@@ -143,7 +143,8 @@ func (r *ChatRepository) GetChats(userID uint) ([]dto.ChatDTO, error) {
 				(SELECT COUNT(*) FROM messages m
 				 WHERE m.chat_id = c.id
 				   AND m.id > COALESCE(crc.last_read_message_id, 0)
-				   AND m.deleted_at IS NULL),
+				   AND m.deleted_at IS NULL
+				   AND m.sender_id != ?),
 				0
 			) AS unread_count
 		FROM chats c
@@ -170,7 +171,8 @@ func (r *ChatRepository) GetChats(userID uint) ([]dto.ChatDTO, error) {
 				(SELECT COUNT(*) FROM messages m
 				 WHERE m.chat_id = c.id
 				   AND m.id > COALESCE(crc.last_read_message_id, 0)
-				   AND m.deleted_at IS NULL),
+				   AND m.deleted_at IS NULL
+				   AND m.sender_id != ?),
 				0
 			) AS unread_count
 		FROM chats c
@@ -179,7 +181,7 @@ func (r *ChatRepository) GetChats(userID uint) ([]dto.ChatDTO, error) {
 		WHERE c.chat_type = 'group'
 
 		ORDER BY last_message_at DESC NULLS LAST
-	`, userID, userID, userID, userID, userID).Scan(&chats).Error
+	`, userID, userID, userID, userID, userID, userID, userID).Scan(&chats).Error
 	if chats == nil {
 		chats = []dto.ChatDTO{}
 	}

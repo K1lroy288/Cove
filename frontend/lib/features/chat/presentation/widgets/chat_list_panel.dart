@@ -8,6 +8,7 @@ import '../../../friends/data/services/friendship_service.dart';
 import '../../../user/data/models/friend_request.dart';
 import '../../../user/data/models/user_dto.dart';
 import '../../../user/data/services/user_service.dart';
+import '../../../user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/chat.dart';
 import '../../data/services/chat_service.dart';
 import '../notification_notifier.dart';
@@ -37,7 +38,7 @@ class _ChatListPanelState extends State<ChatListPanel> {
   _Tab _activeTab = _Tab.chats;
   UserDTO? _foundUser;
   bool _isSearching = false;
-  bool _isSendingRequest = false;
+
   String? _errorMessage;
 
   StreamSubscription? _groupCreatedSub;
@@ -97,6 +98,26 @@ class _ChatListPanelState extends State<ChatListPanel> {
   void reload() => _loadChats();
   void refreshPendingRequests() => _loadPendingRequests();
 
+  void incrementUnreadCount(int chatId) {
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx == -1) return;
+    setState(() => _chats[idx] = _chats[idx].copyWith(unreadCount: _chats[idx].unreadCount + 1));
+  }
+
+  void clearUnreadCount(int chatId) {
+    final idx = _chats.indexWhere((c) => c.id == chatId);
+    if (idx == -1) return;
+    setState(() => _chats[idx] = _chats[idx].copyWith(unreadCount: 0));
+  }
+
+  Chat? findChatById(int chatId) {
+    try {
+      return _chats.firstWhere((c) => c.id == chatId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _openCreateGroupSheet() {
     showModalBottomSheet(
       context: context,
@@ -144,6 +165,13 @@ class _ChatListPanelState extends State<ChatListPanel> {
         _sortByRecent();
         _isLoadingChats = false;
       });
+      final partnerIds = chats
+          .where((c) => !c.isGroup && c.partnerId != 0)
+          .map((c) => c.partnerId)
+          .toList();
+      if (partnerIds.isNotEmpty) {
+        context.read<NotificationNotifier>().fetchPresence(partnerIds, token);
+      }
     }
   }
 
@@ -217,36 +245,6 @@ class _ChatListPanelState extends State<ChatListPanel> {
     }
   }
 
-  Future<void> _handleAddFriend(UserDTO friend) async {
-    final auth = context.read<AuthNotifier>();
-    final currentUserId = int.tryParse(auth.userId ?? '');
-    final token = auth.token;
-    if (currentUserId == null || token == null) return;
-
-    setState(() => _isSendingRequest = true);
-
-    final (success, message) = await _friendshipService.createFriendship(
-      userId: currentUserId,
-      friendId: friend.id,
-      token: token,
-    );
-
-    if (!mounted) return;
-    setState(() {
-      _isSendingRequest = false;
-      if (success) _sentRequestIds.add(friend.id);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor:
-            success ? Colors.green.shade700 : Colors.red.shade700,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
 
   Future<void> _respondToRequest(FriendRequest req, String status) async {
     final token = context.read<AuthNotifier>().token;
@@ -452,37 +450,34 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final hasSentRequest = _sentRequestIds.contains(user.id);
 
     final String subtitle;
-    final Widget trailing;
+    final IconData trailingIcon;
+    final Color trailingColor;
 
     if (isAlreadyFriend) {
       subtitle = "Уже в друзьях";
-      trailing = const Icon(Icons.check, color: Colors.greenAccent);
+      trailingIcon = Icons.check_circle_outline;
+      trailingColor = Colors.greenAccent;
     } else if (hasIncomingRequest) {
       subtitle = "Прислал вам заявку";
-      trailing = const Icon(Icons.mail_outline, color: Colors.amber);
+      trailingIcon = Icons.mail_outline;
+      trailingColor = Colors.amber;
     } else if (hasSentRequest) {
       subtitle = "Запрос отправлен";
-      trailing = const Icon(Icons.schedule, color: Colors.white38);
-    } else if (_isSendingRequest) {
-      subtitle = "Нажмите, чтобы добавить";
-      trailing = const SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(
-            strokeWidth: 2, color: AppTheme.accentIndigo),
-      );
+      trailingIcon = Icons.schedule;
+      trailingColor = Colors.white38;
     } else {
-      subtitle = "Нажмите, чтобы добавить";
-      trailing = IconButton(
-        icon: const Icon(Icons.person_add_outlined,
-            color: AppTheme.accentIndigo),
-        onPressed: () => _handleAddFriend(user),
-      );
+      subtitle = "Нажмите, чтобы открыть профиль";
+      trailingIcon = Icons.person_add_outlined;
+      trailingColor = AppTheme.accentIndigo;
     }
 
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      onTap: () => UserProfileSheet.show(
+        context,
+        user.id,
+        onOpenChat: widget.onChatSelected,
+      ),
       leading: CircleAvatar(
         radius: 24,
         backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
@@ -495,8 +490,9 @@ class _ChatListPanelState extends State<ChatListPanel> {
       title: Text(user.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
-          style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12)),
-      trailing: trailing,
+          style: TextStyle(
+              color: AppColors.of(context).textSecondary, fontSize: 12)),
+      trailing: Icon(trailingIcon, color: trailingColor, size: 20),
     );
   }
 
@@ -545,6 +541,8 @@ class _ChatListPanelState extends State<ChatListPanel> {
     final avatarColor =
         chat.isGroup ? Colors.teal : AppTheme.accentIndigo;
     final avatarBg = avatarColor.withValues(alpha: 0.2);
+    final partnerOnline = !chat.isGroup &&
+        context.watch<NotificationNotifier>().isOnline(chat.partnerId);
 
     return ListTile(
       onTap: () => widget.onChatSelected(chat),
@@ -571,6 +569,20 @@ class _ChatListPanelState extends State<ChatListPanel> {
                 child: Icon(Icons.group, size: 12, color: Colors.teal),
               ),
             ),
+          if (partnerOnline)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4CAF50),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: colors.bg, width: 2),
+                ),
+              ),
+            ),
         ],
       ),
       title: Row(
@@ -586,18 +598,21 @@ class _ChatListPanelState extends State<ChatListPanel> {
           if (chat.unreadCount > 0)
             Container(
               margin: const EdgeInsets.only(left: 4),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
               decoration: BoxDecoration(
                 color: AppTheme.accentIndigo,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                '${chat.unreadCount}',
-                style: const TextStyle(
-                    fontSize: 11,
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold),
+              child: Center(
+                child: Text(
+                  chat.unreadCount > 99 ? '99+' : '${chat.unreadCount}',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2),
+                ),
               ),
             ),
         ],

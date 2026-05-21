@@ -29,3 +29,16 @@ func ToMessageDTO(m model.Message) MessageDTO {
 		CreatedAt: m.CreatedAt,
 	}
 }
+
+// PartnerCursorDTO — курсоры партнёра в DM для вычисления статуса сообщений на клиенте.
+type PartnerCursorDTO struct {
+	LastReadMessageID      *uint `json:"last_read_message_id"`
+	LastDeliveredMessageID *uint `json:"last_delivered_message_id"`
+}
+
+// GetMessagesResponse — ответ на GET /chat/:id/messages.
+// PartnerCursor заполняется только для DM; для групп — nil.
+type GetMessagesResponse struct {
+	Messages      []MessageDTO      `json:"messages"`
+	PartnerCursor *PartnerCursorDTO `json:"partner_cursor,omitempty"`
+}

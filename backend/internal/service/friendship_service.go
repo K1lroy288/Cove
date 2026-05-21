@@ -48,3 +48,7 @@ func (s *FriendshipService) GetSentPendingRequests(userID uint) ([]dto.Friend, e
 func (s *FriendshipService) GetFriends(userID uint) ([]dto.Friend, error) {
 	return s.repo.GetFriends(userID)
 }
+
+func (s *FriendshipService) GetFriendIDs(userID uint) ([]uint, error) {
+	return s.repo.GetFriendIDs(userID)
+}

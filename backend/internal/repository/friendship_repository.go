@@ -91,6 +91,35 @@ func (r *FriendshipRepository) GetSentPendingRequests(userID uint) ([]dto.Friend
 	return friends, err
 }
 
+// GetFriendIDs возвращает только ID друзей — используется для рассылки presence.
+func (r *FriendshipRepository) GetFriendIDs(userID uint) ([]uint, error) {
+	var ids []uint
+	err := r.DB.Model(&model.Friendship{}).
+		Where("user_id = ? AND status = ?", userID, model.StatusAccepted).
+		Pluck("friend_id", &ids).Error
+	return ids, err
+}
+
+// GetFriendshipStatus возвращает статус отношений между двумя пользователями:
+// "friends", "pending_outgoing", "pending_incoming" или "none".
+func (r *FriendshipRepository) GetFriendshipStatus(myID, targetID uint) string {
+	var f model.Friendship
+
+	if err := r.DB.Where("user_id = ? AND friend_id = ? AND status = ?", myID, targetID, model.StatusAccepted).
+		First(&f).Error; err == nil {
+		return "friends"
+	}
+	if err := r.DB.Where("user_id = ? AND friend_id = ? AND status = ?", myID, targetID, model.StatusPending).
+		First(&f).Error; err == nil {
+		return "pending_outgoing"
+	}
+	if err := r.DB.Where("user_id = ? AND friend_id = ? AND status = ?", targetID, myID, model.StatusPending).
+		First(&f).Error; err == nil {
+		return "pending_incoming"
+	}
+	return "none"
+}
+
 // GetFriends возвращает список друзей пользователя.
 // Работает корректно благодаря симметричным записям: при принятии заявки
 // создаются обе строки (A→B и B→A), поэтому достаточно WHERE user_id=?.

@@ -70,7 +70,20 @@ func (h *MessageHandler) GetMessages(ctx *gin.Context) {
 	for i, m := range messages {
 		result[i] = dto.ToMessageDTO(m)
 	}
-	ctx.JSON(http.StatusOK, result)
+
+	resp := dto.GetMessagesResponse{Messages: result}
+
+	// Для DM добавляем курсор партнёра, чтобы фронт мог вычислить статус сообщений.
+	if isDM, _ := h.service.IsDMChat(chatID); isDM {
+		if cursor, err := h.service.GetPartnerCursor(chatID, userID); err == nil {
+			resp.PartnerCursor = &dto.PartnerCursorDTO{
+				LastReadMessageID:      cursor.LastReadMessageID,
+				LastDeliveredMessageID: cursor.LastDeliveredMessageID,
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, resp)
 }
 
 // SendMessage сохраняет сообщение в БД, рассылает участникам чата и уведомляет партнёра.
@@ -119,6 +132,7 @@ func (h *MessageHandler) SendMessage(ctx *gin.Context) {
 	// Уведомляем всех участников чата для обновления chat-list (работает и для DM и для групп)
 	if memberIDs, err := h.service.GetChatMemberIDs(chatID); err == nil {
 		if n, err := dto.NewNotification("new_message", dto.NewMessagePayload{
+			MessageID: msg.ID,
 			ChatID:    chatID,
 			SenderID:  userID,
 			Content:   req.Content,

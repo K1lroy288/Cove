@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../auth/presentation/auth_notifier.dart';
+import '../../../user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
 import '../../data/models/notification.dart';
 import '../../data/services/chat_service.dart';
 import '../notification_notifier.dart';
+import '../../../settings/data/models/user_settings.dart';
+import '../../../settings/presentation/settings_notifier.dart';
 import 'group_info_sheet.dart';
 
 class ChatWindowPanel extends StatefulWidget {
@@ -25,9 +28,13 @@ class ChatWindowPanel extends StatefulWidget {
 class _ChatWindowPanelState extends State<ChatWindowPanel> {
   final ChatService _api = ChatService();
   final TextEditingController _inputController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  final Map<int, String> _drafts = {};
 
   StreamSubscription<ChatMessageNotification>? _chatSub;
+  StreamSubscription<MessageDeliveredNotification>? _deliveredSub;
+  StreamSubscription<MessageReadNotification>? _readSub;
   Timer? _minuteTimer;
   List<Message> _messages = [];
   bool _isLoading = true;
@@ -43,21 +50,36 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       const Duration(minutes: 1),
       (_) { if (mounted) setState(() {}); },
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   @override
   void didUpdateWidget(ChatWindowPanel old) {
     super.didUpdateWidget(old);
     if (old.chat.id != widget.chat.id) {
+      _drafts[old.chat.id] = _inputController.text;
+      final restored = _drafts[widget.chat.id] ?? '';
+      _inputController.text = restored;
+      _inputController.selection =
+          TextSelection.collapsed(offset: restored.length);
+
       final notif = context.read<NotificationNotifier>();
       notif.unsubscribeFromChat(old.chat.id);
       _chatSub?.cancel();
+      _deliveredSub?.cancel();
+      _readSub?.cancel();
       setState(() {
         _messages = [];
         _isLoading = true;
       });
       _loadMessages();
       _subscribeToChat(widget.chat.id);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
     }
   }
 
@@ -65,8 +87,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   void dispose() {
     context.read<NotificationNotifier>().unsubscribeFromChat(widget.chat.id);
     _chatSub?.cancel();
+    _deliveredSub?.cancel();
+    _readSub?.cancel();
     _minuteTimer?.cancel();
     _inputController.dispose();
+    _focusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -74,9 +99,18 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   void _subscribeToChat(int chatId) {
     final notif = context.read<NotificationNotifier>();
     notif.subscribeToChat(chatId);
+
     _chatSub = notif.chatMessageStream
         .where((m) => m.chatId == chatId)
         .listen(_onIncomingMessage, onError: (e) => log('chat ws error: $e'));
+
+    _deliveredSub = notif.messageDeliveredStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onMessageDelivered);
+
+    _readSub = notif.messageReadStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onMessageRead);
   }
 
   void _onIncomingMessage(ChatMessageNotification n) {
@@ -94,11 +128,35 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     _scrollToBottom();
   }
 
+  void _onMessageDelivered(MessageDeliveredNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((m) {
+        if (m.id <= n.messageId && m.status == MessageStatus.sent) {
+          return m.copyWith(status: MessageStatus.delivered);
+        }
+        return m;
+      }).toList();
+    });
+  }
+
+  void _onMessageRead(MessageReadNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((m) {
+        if (m.id <= n.lastReadMessageId && m.status != MessageStatus.read) {
+          return m.copyWith(status: MessageStatus.read);
+        }
+        return m;
+      }).toList();
+    });
+  }
+
   Future<void> _loadMessages() async {
     final auth = context.read<AuthNotifier>();
     if (auth.token == null) return;
 
-    final msgs = await _api.getMessages(
+    final (msgs, _) = await _api.getMessages(
       chatId: widget.chat.id,
       token: auth.token!,
     );
@@ -114,6 +172,12 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         _isLoading = false;
       });
       _scrollToBottom();
+
+      // Отмечаем прочитанными все загруженные сообщения
+      if (msgs.isNotEmpty) {
+        final latestId = msgs.last.id;
+        context.read<NotificationNotifier>().markRead(widget.chat.id, latestId);
+      }
     }
   }
 
@@ -138,6 +202,8 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     if (myId == null || auth.token == null) return;
 
     _inputController.clear();
+    _drafts.remove(widget.chat.id);
+    _focusNode.requestFocus();
     setState(() => _isSending = true);
 
     final tempId = _optimisticCounter--;
@@ -179,13 +245,14 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final chatSettings = context.watch<SettingsNotifier>().settings;
     return Container(
       color: colors.bg,
       child: Column(
         children: [
           _buildHeader(),
           Divider(height: 1, color: colors.divider),
-          Expanded(child: _buildMessageList()),
+          Expanded(child: _buildMessageList(chatSettings)),
           Divider(height: 1, color: colors.divider),
           _buildInputArea(),
         ],
@@ -220,26 +287,32 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  chat.displayName,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                if (isGroup)
+            child: GestureDetector(
+              onTap: isGroup ? null : () => UserProfileSheet.show(context, chat.partnerId),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    "${chat.memberCount ?? '?'} участников",
-                    style: TextStyle(
-                        color: colors.textSecondary, fontSize: 11),
-                  )
-                else
-                  const Text("в сети",
+                    chat.displayName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  if (isGroup)
+                    Text(
+                      "${chat.memberCount ?? '?'} участников",
                       style: TextStyle(
-                          color: Colors.greenAccent, fontSize: 11)),
-              ],
+                          color: colors.textSecondary, fontSize: 11),
+                    )
+                  else if (context
+                      .watch<NotificationNotifier>()
+                      .isOnline(chat.partnerId))
+                    const Text(
+                      'В сети',
+                      style: TextStyle(color: Color(0xFF4CAF50), fontSize: 11),
+                    ),
+                ],
+              ),
             ),
           ),
           if (isGroup)
@@ -275,7 +348,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     );
   }
 
-  Widget _buildMessageList() {
+  Widget _buildMessageList(UserSettings s) {
     if (_isLoading) {
       return const Center(
           child: CircularProgressIndicator(
@@ -305,18 +378,21 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: s.uiDensityPadding),
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final msg = _messages[index];
         final isMe = msg.senderId == myId;
         final showDate = index == 0 ||
             !_isSameDay(_messages[index - 1].createdAt, msg.createdAt);
+        final prevSameSender = !showDate &&
+            index > 0 &&
+            _messages[index - 1].senderId == msg.senderId;
 
         return Column(
           children: [
             if (showDate) _buildDateDivider(msg.createdAt),
-            _buildBubble(msg, isMe),
+            _buildBubble(msg, isMe, s, compact: s.compactChat && prevSameSender),
           ],
         );
       },
@@ -351,14 +427,14 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     );
   }
 
-  Widget _buildBubble(Message msg, bool isMe) {
+  Widget _buildBubble(Message msg, bool isMe, UserSettings s, {bool compact = false}) {
     final failed = msg.isOptimistic;
     final colors = AppColors.of(context);
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
+        margin: EdgeInsets.only(bottom: compact ? 2 : 4),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.of(context).size.width * 0.65,
         ),
@@ -383,40 +459,49 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
             Text(
               msg.content,
               style: TextStyle(
-                fontSize: 14,
-                // свои сообщения — белый текст на indigo всегда; чужие — из темы
+                fontSize: s.chatFontSizeValue,
                 color: isMe ? Colors.white : colors.textPrimary,
               ),
             ),
-            const SizedBox(height: 3),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _formatTime(msg.createdAt),
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: isMe
-                        ? Colors.white.withValues(alpha: 0.6)
-                        : colors.textSecondary,
+            if (s.showMessageTime) ...[
+              const SizedBox(height: 3),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _formatTime(msg.createdAt),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isMe
+                          ? Colors.white.withValues(alpha: 0.6)
+                          : colors.textSecondary,
+                    ),
                   ),
-                ),
-                if (isMe) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    failed ? Icons.error_outline : Icons.done,
-                    size: 12,
-                    color: failed
-                        ? Colors.redAccent
-                        : Colors.white.withValues(alpha: 0.6),
-                  ),
+                  if (isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildStatusIcon(msg),
+                  ],
                 ],
-              ],
-            ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildStatusIcon(Message msg) {
+    if (msg.isOptimistic) {
+      return const Icon(Icons.error_outline, size: 12, color: Colors.redAccent);
+    }
+    switch (msg.status) {
+      case MessageStatus.read:
+        return const Icon(Icons.done_all, size: 15, color: Color(0xFF80DEEA));
+      case MessageStatus.delivered:
+        return const Icon(Icons.done_all, size: 15, color: Colors.white);
+      case MessageStatus.sent:
+        return Icon(Icons.done, size: 15, color: Colors.white.withValues(alpha: 0.8));
+    }
   }
 
   Widget _buildInputArea() {
@@ -428,6 +513,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           Expanded(
             child: TextField(
               controller: _inputController,
+              focusNode: _focusNode,
               style: TextStyle(color: colors.textPrimary, fontSize: 14),
               maxLines: null,
               textInputAction: TextInputAction.send,

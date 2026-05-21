@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+
 type UserHandler struct {
 	service *service.UserService
 }
@@ -141,4 +142,107 @@ func (h *UserHandler) FindUserByID(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, user)
+}
+
+func (h *UserHandler) GetMe(ctx *gin.Context) {
+	myID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+	profile, err := h.service.GetMe(myID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"message": "Пользователь не найден"})
+		return
+	}
+	ctx.JSON(http.StatusOK, profile)
+}
+
+func (h *UserHandler) UpdateMe(ctx *gin.Context) {
+	myID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+	var req dto.UpdateProfileRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
+		return
+	}
+	profile, err := h.service.UpdateMe(myID, req)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			ctx.JSON(http.StatusConflict, gin.H{"message": "Имя пользователя уже занято"})
+			return
+		}
+		if err.Error() == "username too short" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Имя пользователя слишком короткое"})
+			return
+		}
+		log.Printf("UpdateMe error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+	ctx.JSON(http.StatusOK, profile)
+}
+
+func (h *UserHandler) ChangePassword(ctx *gin.Context) {
+	myID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+	var req dto.ChangePasswordRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
+		return
+	}
+	if err := h.service.ChangePassword(myID, req); err != nil {
+		switch err.Error() {
+		case "wrong password":
+			ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Неверный текущий пароль"})
+		case "password too short":
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Новый пароль слишком короткий (минимум 6 символов)"})
+		default:
+			log.Printf("ChangePassword error: %v", err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		}
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (h *UserHandler) DeleteMe(ctx *gin.Context) {
+	myID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+	if err := h.service.DeleteMe(myID); err != nil {
+		log.Printf("DeleteMe error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (h *UserHandler) GetUserProfile(ctx *gin.Context) {
+	myID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+	idStr := ctx.Param("id")
+	idUint, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный формат данных"})
+		return
+	}
+	profile, err := h.service.GetUserProfile(myID, uint(idUint))
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"message": "Пользователь не найден"})
+		return
+	}
+	ctx.JSON(http.StatusOK, profile)
 }

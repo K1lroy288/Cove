@@ -11,6 +11,7 @@ import '../../voice/presentation/widgets/voice_room_page.dart';
 import '../../chat/data/models/chat.dart';
 import '../../friends/presentation/widgets/friends_panel.dart';
 import '../data/models/notification.dart';
+import '../data/services/notification_service.dart';
 import 'notification_notifier.dart';
 import 'widgets/chat_list_panel.dart';
 import 'widgets/chat_window_panel.dart';
@@ -33,6 +34,9 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription<FriendRequestNotification>? _friendReqSub;
   StreamSubscription<void>? _friendAcceptedSub;
 
+  OverlayEntry? _toastEntry;
+  Timer? _toastTimer;
+
   @override
   void initState() {
     super.initState();
@@ -40,6 +44,18 @@ class _MainScreenState extends State<MainScreen> {
       final notif = context.read<NotificationNotifier>();
       _notifSub = notif.messageStream.listen((n) {
         _chatListKey.currentState?.updateChatMessage(n.chatId, n.content, n.createdAt);
+        if (_selectedChat?.id != n.chatId) {
+          _chatListKey.currentState?.incrementUnreadCount(n.chatId);
+          _showIncomingMessageToast(n);
+          final chat = _chatListKey.currentState?.findChatById(n.chatId);
+          if (chat != null) {
+            NotificationService.showMessageNotification(
+              chatName: chat.displayName,
+              content: n.content,
+              chatId: n.chatId,
+            );
+          }
+        }
       });
       _friendReqSub = notif.friendRequestStream.listen((_) {
         _chatListKey.currentState?.refreshPendingRequests();
@@ -48,6 +64,12 @@ class _MainScreenState extends State<MainScreen> {
       _friendAcceptedSub = notif.friendAcceptedStream.listen((_) {
         _friendsPanelKey.currentState?.refresh();
       });
+
+      NotificationService.onNotificationTap = (chatId) {
+        if (!mounted) return;
+        final chat = _chatListKey.currentState?.findChatById(chatId);
+        if (chat != null) _selectChat(chat);
+      };
     });
   }
 
@@ -56,7 +78,59 @@ class _MainScreenState extends State<MainScreen> {
     _notifSub?.cancel();
     _friendReqSub?.cancel();
     _friendAcceptedSub?.cancel();
+    _toastTimer?.cancel();
+    _toastEntry?.remove();
+    NotificationService.onNotificationTap = null;
     super.dispose();
+  }
+
+  void _selectChat(Chat chat) {
+    setState(() {
+      _selectedIndex = 0;
+      _selectedChat = chat;
+    });
+    _chatListKey.currentState?.clearUnreadCount(chat.id);
+  }
+
+  void _showIncomingMessageToast(NewMessageNotification n) {
+    if (!mounted) return;
+    final chat = _chatListKey.currentState?.findChatById(n.chatId);
+    if (chat == null) return;
+
+    _toastTimer?.cancel();
+    _toastEntry?.remove();
+    _toastEntry = null;
+
+    final dismissNotifier = ValueNotifier(false);
+
+    void dismiss() {
+      _toastTimer?.cancel();
+      dismissNotifier.value = true;
+    }
+
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        top: 16,
+        right: 16,
+        child: _MessageToast(
+          chat: chat,
+          content: n.content,
+          dismissNotifier: dismissNotifier,
+          onTap: () {
+            dismiss();
+            _selectChat(chat);
+          },
+          onDismiss: () {
+            _toastEntry?.remove();
+            _toastEntry = null;
+          },
+        ),
+      ),
+    );
+
+    _toastEntry = entry;
+    Overlay.of(context).insert(entry);
+    _toastTimer = Timer(const Duration(seconds: 4), dismiss);
   }
 
   @override
@@ -176,8 +250,7 @@ class _MainScreenState extends State<MainScreen> {
                 width: 320,
                 child: ChatListPanel(
                   key: _chatListKey,
-                  onChatSelected: (chat) =>
-                      setState(() => _selectedChat = chat),
+                  onChatSelected: _selectChat,
                   onFriendAccepted: () =>
                       _friendsPanelKey.currentState?.refresh(),
                 ),
@@ -200,8 +273,7 @@ class _MainScreenState extends State<MainScreen> {
           return _selectedChat == null
               ? ChatListPanel(
                   key: _chatListKey,
-                  onChatSelected: (chat) =>
-                      setState(() => _selectedChat = chat),
+                  onChatSelected: _selectChat,
                   onFriendAccepted: () =>
                       _friendsPanelKey.currentState?.refresh(),
                 )
@@ -318,10 +390,7 @@ class _MainScreenState extends State<MainScreen> {
     return FriendsPanel(
       key: _friendsPanelKey,
       onOpenChat: (Chat chat) {
-        setState(() {
-          _selectedIndex = 0;
-          _selectedChat = chat;
-        });
+        _selectChat(chat);
         _chatListKey.currentState?.reload();
       },
     );
@@ -345,7 +414,6 @@ class _MainScreenState extends State<MainScreen> {
             ],
           );
         }
-        // Mobile: toggle between list and room
         return context.watch<VoiceNotifier>().isInRoom
             ? const VoiceRoomPage()
             : const VoiceRoomListPanel();
@@ -422,5 +490,148 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
   }
+}
 
+// ── Incoming message toast ────────────────────────────────────────────────────
+
+class _MessageToast extends StatefulWidget {
+  final Chat chat;
+  final String content;
+  final ValueNotifier<bool> dismissNotifier;
+  final VoidCallback onTap;
+  final VoidCallback onDismiss;
+
+  const _MessageToast({
+    required this.chat,
+    required this.content,
+    required this.dismissNotifier,
+    required this.onTap,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_MessageToast> createState() => _MessageToastState();
+}
+
+class _MessageToastState extends State<_MessageToast>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 280));
+    _slide = Tween<Offset>(
+            begin: const Offset(0.3, 0), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _ctrl.forward();
+    widget.dismissNotifier.addListener(_onDismissRequested);
+  }
+
+  void _onDismissRequested() {
+    if (widget.dismissNotifier.value) {
+      _ctrl
+          .reverse()
+          .then((_) { if (mounted) widget.onDismiss(); });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.dismissNotifier.removeListener(_onDismissRequested);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final chat = widget.chat;
+    final isGroup = chat.isGroup;
+    final avatarColor = isGroup ? Colors.teal : AppTheme.accentIndigo;
+
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: Material(
+          color: Colors.transparent,
+          child: GestureDetector(
+            onTap: widget.onTap,
+            child: Container(
+              width: 300,
+              padding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: colors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border(
+                  left: BorderSide(color: AppTheme.accentIndigo, width: 3),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                      color: Colors.black38,
+                      blurRadius: 16,
+                      offset: Offset(0, 4)),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(width: 12),
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: avatarColor.withValues(alpha: 0.2),
+                    child: Text(
+                      chat.avatarInitial,
+                      style: TextStyle(
+                          color: avatarColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          chat.displayName,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: colors.textPrimary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.content,
+                          style: TextStyle(
+                              fontSize: 12, color: colors.textSecondary),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      widget.dismissNotifier.value = true;
+                    },
+                    child: Icon(Icons.close,
+                        size: 14, color: colors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -31,9 +31,16 @@ class NotificationNotifier extends ChangeNotifier {
       StreamController.broadcast();
   final StreamController<RoleChangedNotification> _roleChangedController =
       StreamController.broadcast();
+  final StreamController<MessageDeliveredNotification> _msgDeliveredController =
+      StreamController.broadcast();
+  final StreamController<MessageReadNotification> _msgReadController =
+      StreamController.broadcast();
 
   int _pendingRequestCount = 0;
   int get pendingRequestCount => _pendingRequestCount;
+
+  final Map<int, bool> _presenceMap = {};
+  bool isOnline(int userId) => _presenceMap[userId] ?? false;
 
   Stream<ChatMessageNotification> get chatMessageStream =>
       _chatMsgController.stream;
@@ -51,6 +58,10 @@ class NotificationNotifier extends ChangeNotifier {
       _groupDissolvedController.stream;
   Stream<RoleChangedNotification> get roleChangedStream =>
       _roleChangedController.stream;
+  Stream<MessageDeliveredNotification> get messageDeliveredStream =>
+      _msgDeliveredController.stream;
+  Stream<MessageReadNotification> get messageReadStream =>
+      _msgReadController.stream;
 
   static const String _baseUrl = 'http://localhost:3425';
 
@@ -96,7 +107,10 @@ class NotificationNotifier extends ChangeNotifier {
       case 'chat_message':
         _chatMsgController.add(ChatMessageNotification.fromPayload(n.payload));
       case 'new_message':
-        _msgController.add(NewMessageNotification.fromPayload(n.payload));
+        final newMsg = NewMessageNotification.fromPayload(n.payload);
+        _msgController.add(newMsg);
+        // Подтверждаем доставку: сообщение пришло на устройство
+        ackDelivered(newMsg.chatId, newMsg.messageId);
       case 'friend_request':
         _pendingRequestCount++;
         _friendReqController.add(FriendRequestNotification.fromPayload(n.payload));
@@ -119,6 +133,36 @@ class NotificationNotifier extends ChangeNotifier {
       case 'role_changed':
         _roleChangedController
             .add(RoleChangedNotification.fromPayload(n.payload));
+      case 'message_delivered':
+        _msgDeliveredController
+            .add(MessageDeliveredNotification.fromPayload(n.payload));
+      case 'message_read':
+        _msgReadController
+            .add(MessageReadNotification.fromPayload(n.payload));
+      case 'user_presence':
+        final p = UserPresenceNotification.fromPayload(n.payload);
+        _presenceMap[p.userId] = p.isOnline;
+        notifyListeners();
+    }
+  }
+
+  Future<void> fetchPresence(List<int> userIds, String token) async {
+    if (userIds.isEmpty) return;
+    try {
+      final resp = await http.get(
+        Uri.parse('$_baseUrl/user/presence?ids=${userIds.join(',')}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode == 200) {
+        final map = jsonDecode(resp.body) as Map<String, dynamic>;
+        map.forEach((k, v) {
+          final id = int.tryParse(k);
+          if (id != null) _presenceMap[id] = v as bool;
+        });
+        notifyListeners();
+      }
+    } catch (e) {
+      log('fetchPresence error: $e');
     }
   }
 
@@ -127,6 +171,12 @@ class NotificationNotifier extends ChangeNotifier {
 
   void unsubscribeFromChat(int chatId) =>
       _wsService.send({'type': 'unsubscribe_chat', 'chat_id': chatId});
+
+  void ackDelivered(int chatId, int messageId) =>
+      _wsService.send({'type': 'ack_delivered', 'chat_id': chatId, 'message_id': messageId});
+
+  void markRead(int chatId, int messageId) =>
+      _wsService.send({'type': 'mark_read', 'chat_id': chatId, 'message_id': messageId});
 
   void decrementPendingCount() {
     if (_pendingRequestCount > 0) {
@@ -140,6 +190,7 @@ class NotificationNotifier extends ChangeNotifier {
     await _sub?.cancel();
     _wsService.disconnect();
     _pendingRequestCount = 0;
+    _presenceMap.clear();
     notifyListeners();
   }
 
@@ -157,6 +208,8 @@ class NotificationNotifier extends ChangeNotifier {
     _memberChangedController.close();
     _groupDissolvedController.close();
     _roleChangedController.close();
+    _msgDeliveredController.close();
+    _msgReadController.close();
     super.dispose();
   }
 }

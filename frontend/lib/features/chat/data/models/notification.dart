@@ -13,12 +13,14 @@ class AppNotification {
 }
 
 class NewMessageNotification {
+  final int messageId;
   final int chatId;
   final int senderId;
   final String content;
   final DateTime createdAt;
 
   NewMessageNotification({
+    required this.messageId,
     required this.chatId,
     required this.senderId,
     required this.content,
@@ -27,6 +29,7 @@ class NewMessageNotification {
 
   factory NewMessageNotification.fromPayload(Map<String, dynamic> p) {
     return NewMessageNotification(
+      messageId: (p['message_id'] as num).toInt(),
       chatId: (p['chat_id'] as num).toInt(),
       senderId: (p['sender_id'] as num).toInt(),
       content: p['content'] as String,
@@ -170,6 +173,60 @@ class RoleChangedNotification {
       chatId: (p['chat_id'] as num).toInt(),
       userId: (p['user_id'] as num).toInt(),
       newRole: (p['new_role'] as String?) ?? '',
+    );
+  }
+}
+
+class MessageDeliveredNotification {
+  final int chatId;
+  final int messageId;
+  final DateTime deliveredAt;
+
+  MessageDeliveredNotification({
+    required this.chatId,
+    required this.messageId,
+    required this.deliveredAt,
+  });
+
+  factory MessageDeliveredNotification.fromPayload(Map<String, dynamic> p) {
+    return MessageDeliveredNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      messageId: (p['message_id'] as num).toInt(),
+      deliveredAt: DateTime.parse(p['delivered_at'] as String),
+    );
+  }
+}
+
+class UserPresenceNotification {
+  final int userId;
+  final bool isOnline;
+
+  UserPresenceNotification({required this.userId, required this.isOnline});
+
+  factory UserPresenceNotification.fromPayload(Map<String, dynamic> p) {
+    return UserPresenceNotification(
+      userId: (p['user_id'] as num).toInt(),
+      isOnline: p['is_online'] as bool,
+    );
+  }
+}
+
+class MessageReadNotification {
+  final int chatId;
+  final int lastReadMessageId;
+  final DateTime readAt;
+
+  MessageReadNotification({
+    required this.chatId,
+    required this.lastReadMessageId,
+    required this.readAt,
+  });
+
+  factory MessageReadNotification.fromPayload(Map<String, dynamic> p) {
+    return MessageReadNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      lastReadMessageId: (p['last_read_message_id'] as num).toInt(),
+      readAt: DateTime.parse(p['read_at'] as String),
     );
   }
 }

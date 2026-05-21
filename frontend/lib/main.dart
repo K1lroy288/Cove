@@ -4,12 +4,16 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/auth_notifier.dart';
 import 'features/auth/presentation/auth_screen.dart';
+import 'features/chat/data/services/notification_service.dart';
 import 'features/chat/presentation/main_screen.dart';
 import 'features/chat/presentation/notification_notifier.dart';
 import 'features/settings/presentation/settings_notifier.dart';
 import 'features/voice/presentation/voice_notifier.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.initialize();
+
   final authNotifier = AuthNotifier();
   final notifNotifier = NotificationNotifier();
   final settingsNotifier = SettingsNotifier();

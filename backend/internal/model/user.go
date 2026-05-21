@@ -12,6 +12,7 @@ type User struct {
 	ID           uint           `gorm:"primary key; not null"`
 	Username     string         `gorm:"size:100;not null;unique"`
 	PasswordHash []byte         `gorm:"not null"`
+	Bio          *string        `gorm:"size:500"`
 	Settings     datatypes.JSON `gorm:"types:jsonb"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

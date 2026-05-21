@@ -19,6 +19,11 @@ class AuthNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateUsername(String username) {
+    _username = username;
+    notifyListeners();
+  }
+
   Future<void> logout() async {
     _userId = null;
     _username = null;

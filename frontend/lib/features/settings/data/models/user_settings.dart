@@ -27,6 +27,7 @@ class UserSettings {
         'preferences': preferences,
       };
 
+  // ── Уведомления ──────────────────────────────────────────────────────────
   bool get notificationsEnabled =>
       preferences['notifications_enabled'] as bool? ?? true;
   bool get notificationPreview =>
@@ -34,12 +35,46 @@ class UserSettings {
   bool get dndEnabled => preferences['dnd_enabled'] as bool? ?? false;
   String get dndStart => preferences['dnd_start'] as String? ?? '23:00';
   String get dndEnd => preferences['dnd_end'] as String? ?? '08:00';
-  bool get readReceiptsEnabled =>
-      preferences['read_receipts_enabled'] as bool? ?? true;
-  bool get typingIndicatorsEnabled =>
-      preferences['typing_indicators_enabled'] as bool? ?? true;
+  bool get notificationSound =>
+      preferences['notification_sound'] as bool? ?? true;
+  bool get notificationVibration =>
+      preferences['notification_vibration'] as bool? ?? true;
+  bool get notifyFriendsOnly =>
+      preferences['notify_friends_only'] as bool? ?? false;
+
+  // ── Чат ──────────────────────────────────────────────────────────────────
+  bool get sendOnEnter => preferences['send_on_enter'] as bool? ?? true;
+  String get chatFontSize =>
+      preferences['chat_font_size'] as String? ?? 'medium';
+  bool get showMessageTime =>
+      preferences['show_message_time'] as bool? ?? true;
+  bool get compactChat => preferences['compact_chat'] as bool? ?? false;
+
+  // ── Внешний вид ───────────────────────────────────────────────────────────
+  String get uiDensity => preferences['ui_density'] as String? ?? 'normal';
+  bool get showAvatars => preferences['show_avatars'] as bool? ?? true;
+  bool get use24hTime => preferences['use_24h_time'] as bool? ?? true;
+
+  // ── Приватность ───────────────────────────────────────────────────────────
   bool get onlineStatusVisible =>
       preferences['online_status_visible'] as bool? ?? true;
+  String get groupInvitePolicy =>
+      preferences['group_invite_policy'] as String? ?? 'everyone';
+  bool get confirmGroupInvite =>
+      preferences['confirm_group_invite'] as bool? ?? false;
+
+  // ── Computed (не сохраняются) ─────────────────────────────────────────────
+  double get chatFontSizeValue => switch (chatFontSize) {
+        'small' => 13.0,
+        'large' => 16.0,
+        _ => 14.0,
+      };
+
+  double get uiDensityPadding => switch (uiDensity) {
+        'compact' => 8.0,
+        'comfortable' => 18.0,
+        _ => 12.0,
+      };
 
   UserSettings copyWithTheme(String t) =>
       UserSettings(theme: t, locale: locale, preferences: preferences);

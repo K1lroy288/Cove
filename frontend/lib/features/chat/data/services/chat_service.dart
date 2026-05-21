@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
 import '../models/message.dart';
+import '../models/partner_cursor.dart';
 
 class ChatService {
   static const String _baseUrl = "http://localhost:3425";
@@ -51,7 +52,7 @@ class ChatService {
     }
   }
 
-  Future<List<Message>> getMessages({
+  Future<(List<Message>, PartnerCursorModel?)> getMessages({
     required int chatId,
     required String token,
     int? before,
@@ -66,15 +67,33 @@ class ChatService {
         headers: _authHeaders(token),
       );
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        return data
-            .map((e) => Message.fromJson(e as Map<String, dynamic>))
-            .toList();
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final rawMessages = body['messages'] as List<dynamic>;
+        final cursorJson = body['partner_cursor'] as Map<String, dynamic>?;
+
+        PartnerCursorModel? cursor;
+        if (cursorJson != null) {
+          cursor = PartnerCursorModel.fromJson(cursorJson);
+        }
+
+        final messages = rawMessages.map((e) {
+          final msg = Message.fromJson(e as Map<String, dynamic>);
+          if (cursor == null) return msg;
+          MessageStatus status = MessageStatus.sent;
+          if (cursor.lastReadMessageId != null && msg.id <= cursor.lastReadMessageId!) {
+            status = MessageStatus.read;
+          } else if (cursor.lastDeliveredMessageId != null && msg.id <= cursor.lastDeliveredMessageId!) {
+            status = MessageStatus.delivered;
+          }
+          return msg.copyWith(status: status);
+        }).toList();
+
+        return (messages, cursor);
       }
-      return [];
+      return (<Message>[], null);
     } catch (e) {
       log("Error getMessages: $e");
-      return [];
+      return (<Message>[], null);
     }
   }
 

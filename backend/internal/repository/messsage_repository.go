@@ -58,6 +58,16 @@ func (r *MessageRepository) SaveMessage(chatID, senderID uint, content, msgType 
 	return msg, err
 }
 
+// IsDMChat возвращает true, если чат является личным (dm).
+func (r *MessageRepository) IsDMChat(chatID uint) (bool, error) {
+	var chatType string
+	err := r.DB.Table("chats").Select("chat_type").Where("id = ?", chatID).Scan(&chatType).Error
+	if err != nil {
+		return false, err
+	}
+	return chatType == "dm", nil
+}
+
 // IsChatMember проверяет, является ли пользователь участником чата.
 func (r *MessageRepository) IsChatMember(chatID, userID uint) (bool, error) {
 	var count int64
@@ -91,4 +101,54 @@ func (r *MessageRepository) GetChatMemberIDs(chatID uint) ([]uint, error) {
 		Where("chat_id = ?", chatID).
 		Pluck("user_id", &ids).Error
 	return ids, err
+}
+
+// GetMessageSenderID возвращает sender_id для сообщения.
+func (r *MessageRepository) GetMessageSenderID(messageID uint) (uint, error) {
+	var senderID uint
+	err := r.DB.Table("messages").
+		Select("sender_id").
+		Where("id = ?", messageID).
+		Scan(&senderID).Error
+	if err != nil {
+		return 0, err
+	}
+	if senderID == 0 {
+		return 0, fmt.Errorf("message %d not found", messageID)
+	}
+	return senderID, nil
+}
+
+// UpsertDeliveredCursor обновляет last_delivered_message_id, двигая только вперёд.
+func (r *MessageRepository) UpsertDeliveredCursor(chatID, userID, messageID uint) error {
+	return r.DB.Exec(`
+		INSERT INTO chat_read_cursors (chat_id, user_id, last_delivered_message_id, updated_at)
+		VALUES (?, ?, ?, NOW())
+		ON CONFLICT (chat_id, user_id) DO UPDATE SET
+			last_delivered_message_id = GREATEST(EXCLUDED.last_delivered_message_id, COALESCE(chat_read_cursors.last_delivered_message_id, 0)),
+			updated_at = NOW()
+	`, chatID, userID, messageID).Error
+}
+
+// UpsertReadCursor обновляет last_read_message_id и last_delivered_message_id, двигая только вперёд.
+func (r *MessageRepository) UpsertReadCursor(chatID, userID, messageID uint) error {
+	return r.DB.Exec(`
+		INSERT INTO chat_read_cursors (chat_id, user_id, last_read_message_id, last_delivered_message_id, updated_at)
+		VALUES (?, ?, ?, ?, NOW())
+		ON CONFLICT (chat_id, user_id) DO UPDATE SET
+			last_read_message_id = GREATEST(EXCLUDED.last_read_message_id, COALESCE(chat_read_cursors.last_read_message_id, 0)),
+			last_delivered_message_id = GREATEST(EXCLUDED.last_delivered_message_id, COALESCE(chat_read_cursors.last_delivered_message_id, 0)),
+			updated_at = NOW()
+	`, chatID, userID, messageID, messageID).Error
+}
+
+// GetPartnerCursor возвращает курсор партнёра в DM-чате (для отображения статуса своих сообщений).
+func (r *MessageRepository) GetPartnerCursor(chatID, myUserID uint) (*model.ChatReadCursor, error) {
+	var cursor model.ChatReadCursor
+	err := r.DB.Where("chat_id = ? AND user_id != ?", chatID, myUserID).
+		First(&cursor).Error
+	if err != nil {
+		return nil, err
+	}
+	return &cursor, nil
 }

@@ -11,6 +11,7 @@ type NotificationDTO struct {
 }
 
 type NewMessagePayload struct {
+	MessageID uint      `json:"message_id"`
 	ChatID    uint      `json:"chat_id"`
 	SenderID  uint      `json:"sender_id"`
 	Content   string    `json:"content"`
@@ -57,6 +58,23 @@ type RoleChangedPayload struct {
 	ChatID  uint   `json:"chat_id"`
 	UserID  uint   `json:"user_id"`
 	NewRole string `json:"new_role"`
+}
+
+type MessageDeliveredPayload struct {
+	ChatID      uint      `json:"chat_id"`
+	MessageID   uint      `json:"message_id"`
+	DeliveredAt time.Time `json:"delivered_at"`
+}
+
+type MessageReadPayload struct {
+	ChatID            uint      `json:"chat_id"`
+	LastReadMessageID uint      `json:"last_read_message_id"`
+	ReadAt            time.Time `json:"read_at"`
+}
+
+type UserPresencePayload struct {
+	UserID   uint `json:"user_id"`
+	IsOnline bool `json:"is_online"`
 }
 
 func NewNotification(typeName string, payload any) (NotificationDTO, error) {
