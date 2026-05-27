@@ -3,9 +3,10 @@ import 'dart:developer';
 import 'package:http/http.dart' as http;
 import '../models/user_dto.dart';
 import '../models/user_profile.dart';
+import '../../../../core/config.dart';
 
 class UserService {
-  static const String _baseUrl = "http://localhost:3425";
+  static String get _baseUrl => AppConfig.baseUrl;
 
   Map<String, String> _authHeaders(String token) => {
         'Content-Type': 'application/json',

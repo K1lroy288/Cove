@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:http/http.dart' as http;
 import '../models/user_settings.dart';
+import '../../../../core/config.dart';
 
 class SettingsService {
-  static const String _baseUrl = 'http://localhost:3425';
+  static String get _baseUrl => AppConfig.baseUrl;
 
   Map<String, String> _headers(String token) => {
         'Content-Type': 'application/json',

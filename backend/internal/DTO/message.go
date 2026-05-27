@@ -6,8 +6,11 @@ import (
 )
 
 type SendMessageRequest struct {
-	Content string `json:"content" binding:"required"`
-	Type    string `json:"type"`
+	Content  string  `json:"content" binding:"required"`
+	Type     string  `json:"type"`
+	FileName *string `json:"file_name"`
+	FileSize *int64  `json:"file_size"`
+	Caption  *string `json:"caption"`
 }
 
 type MessageDTO struct {
@@ -16,6 +19,9 @@ type MessageDTO struct {
 	SenderID  uint      `json:"sender_id"`
 	Content   string    `json:"content"`
 	Type      string    `json:"type"`
+	FileName  *string   `json:"file_name,omitempty"`
+	FileSize  *int64    `json:"file_size,omitempty"`
+	Caption   *string   `json:"caption,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -26,8 +32,19 @@ func ToMessageDTO(m model.Message) MessageDTO {
 		SenderID:  m.SenderID,
 		Content:   m.Content,
 		Type:      m.Type,
+		FileName:  m.FileName,
+		FileSize:  m.FileSize,
+		Caption:   m.Caption,
 		CreatedAt: m.CreatedAt,
 	}
+}
+
+// UploadResponse — ответ на POST /upload.
+type UploadResponse struct {
+	URL      string `json:"url"`
+	Type     string `json:"type"`
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
 }
 
 // PartnerCursorDTO — курсоры партнёра в DM для вычисления статуса сообщений на клиенте.

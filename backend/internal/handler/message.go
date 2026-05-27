@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -59,7 +60,12 @@ func (h *MessageHandler) GetMessages(ctx *gin.Context) {
 		}
 	}
 
-	messages, err := h.service.GetMessages(chatID, beforeID, limit)
+	var types []string
+	if raw := ctx.Query("types"); raw != "" {
+		types = strings.Split(raw, ",")
+	}
+
+	messages, err := h.service.GetMessages(chatID, beforeID, limit, types)
 	if err != nil {
 		log.Printf("get messages error: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
@@ -113,7 +119,7 @@ func (h *MessageHandler) SendMessage(ctx *gin.Context) {
 		return
 	}
 
-	msg, err := h.service.SendMessage(chatID, userID, req.Content, req.Type)
+	msg, err := h.service.SendMessage(chatID, userID, req.Content, req.Type, req.FileName, req.FileSize, req.Caption)
 	if err != nil {
 		log.Printf("send message error: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})

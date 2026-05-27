@@ -43,6 +43,9 @@ class ChatMessageNotification {
   final int chatId;
   final int senderId;
   final String content;
+  final String type;
+  final String? fileName;
+  final int? fileSize;
   final DateTime createdAt;
 
   ChatMessageNotification({
@@ -50,6 +53,9 @@ class ChatMessageNotification {
     required this.chatId,
     required this.senderId,
     required this.content,
+    this.type = 'text',
+    this.fileName,
+    this.fileSize,
     required this.createdAt,
   });
 
@@ -59,6 +65,9 @@ class ChatMessageNotification {
       chatId: (p['chat_id'] as num).toInt(),
       senderId: (p['sender_id'] as num).toInt(),
       content: p['content'] as String,
+      type: p['type'] as String? ?? 'text',
+      fileName: p['file_name'] as String?,
+      fileSize: p['file_size'] == null ? null : (p['file_size'] as num).toInt(),
       createdAt: DateTime.parse(p['created_at'] as String),
     );
   }

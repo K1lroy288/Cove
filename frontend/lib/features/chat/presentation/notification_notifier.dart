@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../data/models/notification.dart';
 import '../data/services/global_ws_service.dart';
+import '../../../core/config.dart';
 
 class NotificationNotifier extends ChangeNotifier {
   final GlobalWsService _wsService = GlobalWsService();
@@ -63,7 +64,7 @@ class NotificationNotifier extends ChangeNotifier {
   Stream<MessageReadNotification> get messageReadStream =>
       _msgReadController.stream;
 
-  static const String _baseUrl = 'http://localhost:3425';
+  static String get _baseUrl => AppConfig.baseUrl;
 
   Future<void> connect(String token) async {
     _token = token;

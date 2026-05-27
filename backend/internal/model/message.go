@@ -7,12 +7,15 @@ import (
 )
 
 type Message struct {
-	ID        uint   `gorm:"primaryKey"`
-	ChatID    uint   `gorm:"column:chat_id;not null"`
-	SenderID  uint   `gorm:"column:sender_id;not null"`
-	Content   string `gorm:"type:text;not null"`
-	Type      string `gorm:"size:20;not null;default:'text'"`
-	ReplyToID *uint  `gorm:"column:reply_to_id"`
+	ID        uint    `gorm:"primaryKey"`
+	ChatID    uint    `gorm:"column:chat_id;not null"`
+	SenderID  uint    `gorm:"column:sender_id;not null"`
+	Content   string  `gorm:"type:text;not null"`
+	Type      string  `gorm:"size:20;not null;default:'text'"`
+	ReplyToID *uint   `gorm:"column:reply_to_id"`
+	FileName  *string `gorm:"column:file_name;size:255"`
+	FileSize  *int64  `gorm:"column:file_size"`
+	Caption   *string `gorm:"column:caption;type:text"`
 	CreatedAt time.Time
 	EditedAt  *time.Time     `gorm:"column:edited_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`

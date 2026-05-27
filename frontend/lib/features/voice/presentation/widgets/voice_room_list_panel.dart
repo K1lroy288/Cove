@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
@@ -89,6 +90,19 @@ class _VoiceRoomListPanelState extends State<VoiceRoomListPanel> {
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
+            ),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.emoji_emotions_outlined, size: 20),
+              onPressed: () => showModalBottomSheet(
+                context: ctx,
+                builder: (_) => SizedBox(
+                  height: 300,
+                  child: EmojiPicker(
+                    textEditingController: controller,
+                    config: AppTheme.emojiPickerConfig(colors, height: 300),
+                  ),
+                ),
+              ),
             ),
           ),
           onSubmitted: (_) => Navigator.of(ctx).pop(true),

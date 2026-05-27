@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
@@ -151,6 +152,22 @@ class _GroupInfoSheetState extends State<GroupInfoSheet> {
           decoration: InputDecoration(
             hintText: "Название",
             hintStyle: TextStyle(color: AppColors.of(context).textSecondary),
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.emoji_emotions_outlined, size: 20),
+              onPressed: () {
+                final colors = AppColors.of(context);
+                showModalBottomSheet(
+                  context: ctx,
+                  builder: (_) => SizedBox(
+                    height: 300,
+                    child: EmojiPicker(
+                      textEditingController: controller,
+                      config: AppTheme.emojiPickerConfig(colors, height: 300),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ),
         actions: [

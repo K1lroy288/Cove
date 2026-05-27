@@ -1,9 +1,10 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/auth_response.dart';
+import '../../../../core/config.dart';
 
 class AuthService {
-  final String baseUrl = 'http://localhost:3425';
+  String get baseUrl => AppConfig.baseUrl;
 
   // 🔐 Логин: ожидаем тело с токеном
   Future<AuthResponse> login(String username, String password) async {

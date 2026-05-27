@@ -3,9 +3,10 @@ import 'dart:developer';
 import 'package:http/http.dart' as http;
 import '../models/friend.dart';
 import '../../../user/data/models/friend_request.dart';
+import '../../../../core/config.dart';
 
 class FriendshipService {
-  static const String _baseUrl = "http://localhost:3425";
+  static String get _baseUrl => AppConfig.baseUrl;
 
   Map<String, String> _authHeaders(String token) => {
         'Content-Type': 'application/json',

@@ -7,10 +7,18 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 type Config struct {
 	Port      string
 	JwtSecret string
 	DB        DBConfig
+	MinIO     MinIOConfig
 }
 
 type DBConfig struct {
@@ -19,6 +27,15 @@ type DBConfig struct {
 	Password string
 	Name     string
 	Port     string
+}
+
+type MinIOConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	PublicURL string
+	UseSSL    bool
 }
 
 var (
@@ -45,6 +62,14 @@ func loadConfig() *Config {
 				Password: os.Getenv("DB_PASSWORD"),
 				Name:     os.Getenv("DB_NAME"),
 				Port:     os.Getenv("DB_PORT"),
+			},
+			MinIO: MinIOConfig{
+				Endpoint:  envOrDefault("MINIO_ENDPOINT", "localhost:9000"),
+				AccessKey: envOrDefault("MINIO_ACCESS_KEY", "minioadmin"),
+				SecretKey: envOrDefault("MINIO_SECRET_KEY", "minioadmin"),
+				Bucket:    envOrDefault("MINIO_BUCKET", "cove-media"),
+				PublicURL: envOrDefault("MINIO_PUBLIC_URL", "http://localhost:9000"),
+				UseSSL:    os.Getenv("MINIO_USE_SSL") == "true",
 			},
 		}
 	})

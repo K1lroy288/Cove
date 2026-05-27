@@ -64,6 +64,12 @@ func main() {
 	settingsService := service.NewSettingsService(settingsRepo)
 	settingsHandler := handler.NewSettingsHandler(settingsService)
 
+	uploadService, err := service.NewUploadService(cfg)
+	if err != nil {
+		log.Fatalf("Failed to init upload service: %v", err)
+	}
+	uploadHandler := handler.NewUploadHandler(uploadService)
+
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
@@ -141,6 +147,13 @@ func main() {
 		settings.PATCH("/", settingsHandler.UpdateSettings)
 		settings.GET("/chat/:id", settingsHandler.GetChatNotifSettings)
 		settings.PATCH("/chat/:id", settingsHandler.UpdateChatNotifSettings)
+	}
+
+	// ── Upload (требует JWT) ─────────────────────────────────────────────────────
+	upload := r.Group("/upload")
+	upload.Use(middleware.JWTAuth())
+	{
+		upload.POST("/", uploadHandler.Upload)
 	}
 
 	// WS без JWT middleware — токен передаётся через query-параметр ?token=

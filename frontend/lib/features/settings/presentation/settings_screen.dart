@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
@@ -57,9 +58,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
               TextField(
                 controller: bioCtrl,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'О себе',
                   hintText: 'Расскажите о себе...',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.emoji_emotions_outlined, size: 20),
+                    onPressed: () => _showEmojiSheet(ctx, bioCtrl),
+                  ),
                 ),
                 maxLines: 3,
                 maxLength: 500,
@@ -272,6 +277,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     }
+  }
+
+  void _showEmojiSheet(BuildContext ctx, TextEditingController ctrl) {
+    final colors = AppColors.of(ctx);
+    showModalBottomSheet(
+      context: ctx,
+      builder: (_) => SizedBox(
+        height: 300,
+        child: EmojiPicker(
+          textEditingController: ctrl,
+          config: AppTheme.emojiPickerConfig(colors, height: 300),
+        ),
+      ),
+    );
   }
 
   void _updatePref(

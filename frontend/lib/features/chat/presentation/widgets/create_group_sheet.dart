@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
@@ -54,6 +55,20 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
         _isLoadingFriends = false;
       });
     }
+  }
+
+  void _showEmojiSheet(TextEditingController ctrl) {
+    final colors = AppColors.of(context);
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SizedBox(
+        height: 300,
+        child: EmojiPicker(
+          textEditingController: ctrl,
+          config: AppTheme.emojiPickerConfig(colors, height: 300),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleCreate() async {
@@ -131,7 +146,12 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
           TextField(
             controller: _nameController,
             style: TextStyle(color: colors.textPrimary),
-            decoration: _inputDecoration(colors, "Название группы *"),
+            decoration: _inputDecoration(colors, "Название группы *").copyWith(
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.emoji_emotions_outlined, size: 20),
+                onPressed: () => _showEmojiSheet(_nameController),
+              ),
+            ),
             maxLength: 100,
           ),
           const SizedBox(height: 8),

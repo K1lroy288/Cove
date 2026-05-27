@@ -1,3 +1,6 @@
+# Environment config (edit .env.json.example and rename)
+.env.json
+
 # Miscellaneous
 *.class
 *.log

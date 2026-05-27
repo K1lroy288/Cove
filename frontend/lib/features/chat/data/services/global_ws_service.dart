@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:developer';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/notification.dart';
+import '../../../../core/config.dart';
 
 class GlobalWsService {
-  static const String _wsBaseUrl = 'ws://localhost:3425';
+  static String get _wsBaseUrl => AppConfig.wsUrl;
 
   WebSocketChannel? _channel;
 

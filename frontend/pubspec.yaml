@@ -38,22 +38,43 @@ dependencies:
   provider: ^6.1.5+1
   web_socket_channel: ^3.0.0
   flutter_local_notifications: ^18.0.0
+  emoji_picker_flutter: ^4.4.0
+  file_selector: ^1.0.0
+  url_launcher: ^6.3.0
+  photo_view: ^0.15.0
+  image: ^4.3.0
+  media_kit: any
+  media_kit_video: any
+  media_kit_libs_video: any
+  record: ^6.0.0
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+  linux:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 48
+
 flutter:
 
   # The following line ensures that the Material Icons font is

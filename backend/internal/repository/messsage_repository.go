@@ -17,10 +17,13 @@ func NewMessageRepository(db *gorm.DB) *MessageRepository {
 
 // GetMessages возвращает limit сообщений чата в хронологическом порядке.
 // Если beforeID задан — возвращает сообщения с id < beforeID (подгрузка истории вверх).
-func (r *MessageRepository) GetMessages(chatID uint, beforeID *uint, limit int) ([]model.Message, error) {
+func (r *MessageRepository) GetMessages(chatID uint, beforeID *uint, limit int, types []string) ([]model.Message, error) {
 	q := r.DB.Where("chat_id = ? AND deleted_at IS NULL", chatID)
 	if beforeID != nil {
 		q = q.Where("id < ?", *beforeID)
+	}
+	if len(types) > 0 {
+		q = q.Where("type IN ?", types)
 	}
 
 	var messages []model.Message
@@ -38,12 +41,15 @@ func (r *MessageRepository) GetMessages(chatID uint, beforeID *uint, limit int) 
 }
 
 // SaveMessage сохраняет сообщение и обновляет денормализованные поля чата в одной транзакции.
-func (r *MessageRepository) SaveMessage(chatID, senderID uint, content, msgType string) (model.Message, error) {
+func (r *MessageRepository) SaveMessage(chatID, senderID uint, content, msgType string, fileName *string, fileSize *int64, caption *string) (model.Message, error) {
 	msg := model.Message{
 		ChatID:   chatID,
 		SenderID: senderID,
 		Content:  content,
 		Type:     msgType,
+		FileName: fileName,
+		FileSize: fileSize,
+		Caption:  caption,
 	}
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&msg).Error; err != nil {

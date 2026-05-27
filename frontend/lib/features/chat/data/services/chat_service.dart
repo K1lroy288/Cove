@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../models/partner_cursor.dart';
+import '../models/upload_result.dart';
+import '../../../../core/config.dart';
 
 class ChatService {
-  static const String _baseUrl = "http://localhost:3425";
+  static String get _baseUrl => AppConfig.baseUrl;
 
   Map<String, String> _authHeaders(String token) => {
         'Content-Type': 'application/json',
@@ -57,11 +60,13 @@ class ChatService {
     required String token,
     int? before,
     int limit = 50,
+    List<String>? types,
   }) async {
     try {
-      final query = before != null
-          ? '?before=$before&limit=$limit'
-          : '?limit=$limit';
+      final q = StringBuffer('?limit=$limit');
+      if (before != null) q.write('&before=$before');
+      if (types != null && types.isNotEmpty) q.write('&types=${types.join(",")}');
+      final query = q.toString();
       final response = await http.get(
         Uri.parse('$_baseUrl/chat/$chatId/messages$query'),
         headers: _authHeaders(token),
@@ -101,12 +106,20 @@ class ChatService {
     required int chatId,
     required String content,
     required String token,
+    String type = 'text',
+    String? fileName,
+    int? fileSize,
+    String? caption,
   }) async {
     try {
+      final body = <String, dynamic>{'content': content, 'type': type};
+      if (fileName != null) body['file_name'] = fileName;
+      if (fileSize != null) body['file_size'] = fileSize;
+      if (caption != null && caption.isNotEmpty) body['caption'] = caption;
       final response = await http.post(
         Uri.parse('$_baseUrl/chat/$chatId/messages'),
         headers: _authHeaders(token),
-        body: jsonEncode({'content': content, 'type': 'text'}),
+        body: jsonEncode(body),
       );
       if (response.statusCode == 200 || response.statusCode == 201) {
         return Message.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
@@ -114,6 +127,42 @@ class ChatService {
       return null;
     } catch (e) {
       log("Error sendMessage: $e");
+      return null;
+    }
+  }
+
+  Future<UploadResult?> uploadFile({
+    required String token,
+    String? filePath,
+    Uint8List? fileBytes,
+    String? fileName,
+  }) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$_baseUrl/upload/'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      if (fileBytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'file',
+          fileBytes,
+          filename: fileName ?? 'image.jpg',
+        ));
+      } else if (filePath != null) {
+        request.files.add(await http.MultipartFile.fromPath('file', filePath));
+      } else {
+        return null;
+      }
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        return UploadResult.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+      }
+      log("Error uploadFile: ${response.statusCode} ${response.body}");
+      return null;
+    } catch (e) {
+      log("Error uploadFile: $e");
       return null;
     }
   }

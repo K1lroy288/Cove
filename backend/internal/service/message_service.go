@@ -14,15 +14,15 @@ func NewMessageService(repo *repository.MessageRepository) *MessageService {
 	return &MessageService{repo: repo}
 }
 
-func (s *MessageService) GetMessages(chatID uint, beforeID *uint, limit int) ([]model.Message, error) {
-	return s.repo.GetMessages(chatID, beforeID, limit)
+func (s *MessageService) GetMessages(chatID uint, beforeID *uint, limit int, types []string) ([]model.Message, error) {
+	return s.repo.GetMessages(chatID, beforeID, limit, types)
 }
 
-func (s *MessageService) SendMessage(chatID, senderID uint, content, msgType string) (model.Message, error) {
+func (s *MessageService) SendMessage(chatID, senderID uint, content, msgType string, fileName *string, fileSize *int64, caption *string) (model.Message, error) {
 	if msgType == "" {
 		msgType = "text"
 	}
-	msg, err := s.repo.SaveMessage(chatID, senderID, content, msgType)
+	msg, err := s.repo.SaveMessage(chatID, senderID, content, msgType, fileName, fileSize, caption)
 	if err != nil {
 		return model.Message{}, fmt.Errorf("save message: %w", err)
 	}

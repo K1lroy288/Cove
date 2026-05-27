@@ -1,3 +1,4 @@
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 
 class AppColors extends ThemeExtension<AppColors> {
@@ -70,6 +71,39 @@ class AppTheme {
     textSecondary: Color(0xFF757575), // gray600 — достаточный контраст на белом
     divider: Color(0xFFBDBDBD),       // gray400 — видимые границы
   );
+
+  static Config emojiPickerConfig(AppColors colors, {double height = 256}) {
+    return Config(
+      height: height,
+      emojiViewConfig: EmojiViewConfig(
+        backgroundColor: colors.surface,
+        noRecents: Text(
+          'Нет недавних',
+          style: TextStyle(fontSize: 16, color: colors.textSecondary),
+          textAlign: TextAlign.center,
+        ),
+      ),
+      categoryViewConfig: CategoryViewConfig(
+        backgroundColor: colors.surface,
+        indicatorColor: accentIndigo,
+        iconColor: colors.textSecondary,
+        iconColorSelected: accentIndigo,
+        backspaceColor: accentIndigo,
+        dividerColor: colors.divider,
+      ),
+      bottomActionBarConfig: BottomActionBarConfig(
+        backgroundColor: colors.surface,
+        buttonColor: colors.surface,
+        buttonIconColor: accentIndigo,
+      ),
+      searchViewConfig: SearchViewConfig(
+        backgroundColor: colors.surface,
+        buttonIconColor: colors.textSecondary,
+        inputTextStyle: TextStyle(color: colors.textPrimary),
+        hintTextStyle: TextStyle(color: colors.textSecondary),
+      ),
+    );
+  }
 
   static ThemeData get darkTheme {
     return ThemeData(
