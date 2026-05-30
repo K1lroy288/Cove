@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
+import '../../../user/presentation/widgets/user_avatar.dart';
 import '../../data/models/chat.dart';
 
 class GroupMemberTile extends StatelessWidget {
@@ -23,19 +24,14 @@ class GroupMemberTile extends StatelessWidget {
     final colors = AppColors.of(context);
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: CircleAvatar(
+      leading: UserAvatar(
+        avatarUrl: member.avatarUrl,
+        initial: member.username.isNotEmpty ? member.username[0] : '?',
         radius: 20,
-        backgroundColor: member.isAdmin
+        bgColor: member.isAdmin
             ? Colors.teal.withValues(alpha: 0.2)
             : AppTheme.accentIndigo.withValues(alpha: 0.15),
-        child: Text(
-          member.username[0].toUpperCase(),
-          style: TextStyle(
-            color: member.isAdmin ? Colors.teal : AppTheme.accentIndigo,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
+        textColor: member.isAdmin ? Colors.teal : AppTheme.accentIndigo,
       ),
       title: Row(
         children: [

@@ -218,3 +218,34 @@ func (s *ChatService) GetGroupMemberIDs(chatID uint) ([]uint, error) {
 func (s *ChatService) GetChatType(chatID uint) (string, error) {
 	return s.repo.GetChatType(chatID)
 }
+
+// PinMessage закрепляет сообщение в чате (только admin в группе, любой участник в DM).
+func (s *ChatService) PinMessage(chatID, callerID, messageID uint) error {
+	role, err := s.repo.GetMemberRole(chatID, callerID)
+	if err != nil || role == "" {
+		return ErrNotMember
+	}
+	chatType, _ := s.repo.GetChatType(chatID)
+	if chatType == "group" && role != "admin" {
+		return ErrNotAdmin
+	}
+	return s.repo.PinMessage(chatID, messageID)
+}
+
+// UnpinMessage убирает закреплённое сообщение (только admin в группе, любой участник в DM).
+func (s *ChatService) UnpinMessage(chatID, callerID uint) error {
+	role, err := s.repo.GetMemberRole(chatID, callerID)
+	if err != nil || role == "" {
+		return ErrNotMember
+	}
+	chatType, _ := s.repo.GetChatType(chatID)
+	if chatType == "group" && role != "admin" {
+		return ErrNotAdmin
+	}
+	return s.repo.UnpinMessage(chatID)
+}
+
+// GetPinnedMessage возвращает закреплённое сообщение чата.
+func (s *ChatService) GetPinnedMessage(chatID uint) (*dto.PinnedMessageDTO, error) {
+	return s.repo.GetPinnedMessage(chatID)
+}

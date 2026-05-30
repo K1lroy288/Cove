@@ -49,6 +49,7 @@ func main() {
 		messageService.MarkDelivered,
 		messageService.MarkRead,
 		friendshipService.GetFriendIDs,
+		friendshipService.UpdateLastSeen,
 	)
 	go appHub.Run()
 
@@ -111,8 +112,12 @@ func main() {
 		friendship.GET("/pending/count", friendshipHandler.GetPendingRequestsCount)
 		friendship.GET("/sent", friendshipHandler.GetSentRequests)
 		friendship.GET("/friends", friendshipHandler.GetFriends)
+		friendship.GET("/blocked", friendshipHandler.GetBlockedUsers)
 		friendship.POST("/", friendshipHandler.CreateFriendship)
 		friendship.PATCH("/:user_id/status", friendshipHandler.RespondToFriendRequest)
+		friendship.DELETE("/:user_id", friendshipHandler.RemoveFriend)
+		friendship.POST("/:user_id/block", friendshipHandler.BlockUser)
+		friendship.DELETE("/:user_id/block", friendshipHandler.UnblockUser)
 	}
 
 	// ── Chat (требует JWT) ────────────────────────────────────────────────────────
@@ -121,8 +126,14 @@ func main() {
 	{
 		chat.GET("/", chatHandler.GetChats)
 		chat.POST("/", chatHandler.CreateChat)
+		chat.PATCH("/:id/pin", chatHandler.PinMessage)
+		chat.DELETE("/:id/pin", chatHandler.UnpinMessage)
 		chat.GET("/:id/messages", messageHandler.GetMessages)
 		chat.POST("/:id/messages", messageHandler.SendMessage)
+		chat.GET("/:id/messages/search", messageHandler.SearchMessages)
+		chat.PATCH("/:id/messages/:msg_id", messageHandler.EditMessage)
+		chat.DELETE("/:id/messages/:msg_id", messageHandler.DeleteMessage)
+		chat.POST("/:id/messages/:msg_id/reactions", messageHandler.ToggleReaction)
 	}
 
 	// ── Groups (требует JWT) ─────────────────────────────────────────────────────

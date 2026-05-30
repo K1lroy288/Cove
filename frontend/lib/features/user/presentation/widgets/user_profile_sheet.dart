@@ -7,6 +7,7 @@ import '../../../chat/data/services/chat_service.dart';
 import '../../../friends/data/services/friendship_service.dart';
 import '../../data/models/user_profile.dart';
 import '../../data/services/user_service.dart';
+import 'user_avatar.dart';
 
 class UserProfileSheet extends StatefulWidget {
   final int userId;
@@ -65,11 +66,7 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
     setState(() {
       _actionLoading = false;
       if (ok && _profile != null) {
-        _profile = UserProfile(
-          id: _profile!.id, username: _profile!.username,
-          bio: _profile!.bio, memberSince: _profile!.memberSince,
-          friendshipStatus: FriendshipStatus.pendingOutgoing,
-        );
+        _profile = _profile!.copyWith(friendshipStatus: FriendshipStatus.pendingOutgoing);
       }
     });
     _showSnack(msg, ok);
@@ -86,9 +83,7 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
     setState(() {
       _actionLoading = false;
       if (ok && _profile != null) {
-        _profile = UserProfile(
-          id: _profile!.id, username: _profile!.username,
-          bio: _profile!.bio, memberSince: _profile!.memberSince,
+        _profile = _profile!.copyWith(
           friendshipStatus: status == 'accepted'
               ? FriendshipStatus.friends
               : FriendshipStatus.none,
@@ -113,6 +108,80 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
     }
   }
 
+  Future<void> _unfriend() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить из друзей?'),
+        content: Text('Вы уверены, что хотите удалить ${_profile?.username} из друзей?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    setState(() => _actionLoading = true);
+    final ok = await _friendshipService.removeFriend(userId: widget.userId, token: token);
+    if (!mounted) return;
+    setState(() {
+      _actionLoading = false;
+      if (ok && _profile != null) {
+        _profile = _profile!.copyWith(friendshipStatus: FriendshipStatus.none);
+      }
+    });
+    _showSnack(ok ? 'Удалено из друзей' : 'Не удалось удалить', ok);
+  }
+
+  Future<void> _toggleBlock() async {
+    final p = _profile;
+    if (p == null) return;
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+
+    if (p.isBlocked) {
+      setState(() => _actionLoading = true);
+      final ok = await _friendshipService.unblockUser(userId: widget.userId, token: token);
+      if (!mounted) return;
+      setState(() {
+        _actionLoading = false;
+        if (ok) _profile = _profile!.copyWith(isBlocked: false);
+      });
+      _showSnack(ok ? 'Пользователь разблокирован' : 'Ошибка', ok);
+    } else {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Заблокировать?'),
+          content: Text('${p.username} не сможет писать вам сообщения.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Заблокировать', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      setState(() => _actionLoading = true);
+      final ok = await _friendshipService.blockUser(userId: widget.userId, token: token);
+      if (!mounted) return;
+      setState(() {
+        _actionLoading = false;
+        if (ok) {
+          _profile = _profile!.copyWith(isBlocked: true, friendshipStatus: FriendshipStatus.none);
+        }
+      });
+      _showSnack(ok ? 'Пользователь заблокирован' : 'Ошибка', ok);
+    }
+  }
+
   void _showSnack(String msg, bool ok) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
@@ -127,7 +196,7 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
     return DraggableScrollableSheet(
       initialChildSize: 0.5,
       minChildSize: 0.35,
-      maxChildSize: 0.75,
+      maxChildSize: 0.8,
       builder: (_, controller) => Container(
         decoration: BoxDecoration(
           color: colors.bg,
@@ -166,13 +235,12 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
       children: [
         Center(
-          child: CircleAvatar(
+          child: UserAvatar(
+            avatarUrl: p.avatarUrl,
+            initial: p.username.isNotEmpty ? p.username[0] : '?',
             radius: 42,
-            backgroundColor: color.withValues(alpha: 0.18),
-            child: Text(
-              p.username.isNotEmpty ? p.username[0].toUpperCase() : '?',
-              style: TextStyle(fontSize: 36, color: color, fontWeight: FontWeight.bold),
-            ),
+            bgColor: color.withValues(alpha: 0.18),
+            textColor: color,
           ),
         ),
         const SizedBox(height: 14),
@@ -194,8 +262,19 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
             style: TextStyle(fontSize: 12, color: colors.textSecondary),
           ),
         ),
+        if (p.lastSeenAt != null) ...[
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              'был(а) в сети ${_formatLastSeen(p.lastSeenAt!)}',
+              style: TextStyle(fontSize: 12, color: colors.textSecondary),
+            ),
+          ),
+        ],
         const SizedBox(height: 28),
         _buildActions(p),
+        const SizedBox(height: 12),
+        _buildSecondaryActions(p),
       ],
     );
   }
@@ -207,6 +286,15 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
           padding: EdgeInsets.symmetric(vertical: 12),
           child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentIndigo),
         ),
+      );
+    }
+
+    if (p.isBlocked) {
+      return _actionButton(
+        icon: Icons.block,
+        label: 'Заблокирован',
+        color: Colors.grey,
+        onTap: null,
       );
     }
 
@@ -250,13 +338,46 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
           ],
         );
       case FriendshipStatus.friends:
-        return _actionButton(
-          icon: Icons.chat_bubble_outline,
-          label: 'Написать',
-          color: AppTheme.accentIndigo,
-          onTap: widget.onOpenChat != null ? _openChat : null,
+        return Row(
+          children: [
+            Expanded(
+              child: _actionButton(
+                icon: Icons.chat_bubble_outline,
+                label: 'Написать',
+                color: AppTheme.accentIndigo,
+                onTap: widget.onOpenChat != null ? _openChat : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionButton(
+                icon: Icons.person_remove_outlined,
+                label: 'Удалить',
+                color: Colors.redAccent,
+                onTap: _unfriend,
+              ),
+            ),
+          ],
         );
     }
+  }
+
+  Widget _buildSecondaryActions(UserProfile p) {
+    return TextButton.icon(
+      onPressed: _toggleBlock,
+      icon: Icon(
+        p.isBlocked ? Icons.lock_open_outlined : Icons.block_outlined,
+        size: 16,
+        color: p.isBlocked ? AppTheme.accentIndigo : Colors.redAccent,
+      ),
+      label: Text(
+        p.isBlocked ? 'Разблокировать' : 'Заблокировать',
+        style: TextStyle(
+          fontSize: 13,
+          color: p.isBlocked ? AppTheme.accentIndigo : Colors.redAccent,
+        ),
+      ),
+    );
   }
 
   Widget _actionButton({
@@ -285,5 +406,16 @@ class _UserProfileSheetState extends State<UserProfileSheet> {
       'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
     ];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  String _formatLastSeen(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'только что';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} мин. назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч. назад';
+    if (diff.inDays == 1) return 'вчера';
+    if (diff.inDays < 7) return '${diff.inDays} дн. назад';
+    return '${dt.day}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
   }
 }

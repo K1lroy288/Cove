@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:math' show min;
-import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -27,6 +27,7 @@ import '../../../settings/data/models/user_settings.dart';
 import '../../../settings/presentation/settings_notifier.dart';
 import 'group_info_sheet.dart';
 import 'chat_attachments_sheet.dart';
+import '../../../user/presentation/widgets/user_avatar.dart';
 
 String _fileType(String ext) {
   const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'};
@@ -38,7 +39,6 @@ String _fileType(String ext) {
   return 'file';
 }
 
-// Запускается в отдельном изоляте через compute().
 Future<Uint8List?> _compressImageFile(String filePath) async {
   try {
     final bytes = await File(filePath).readAsBytes();
@@ -79,6 +79,12 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   StreamSubscription<ChatMessageNotification>? _chatSub;
   StreamSubscription<MessageDeliveredNotification>? _deliveredSub;
   StreamSubscription<MessageReadNotification>? _readSub;
+  StreamSubscription<MessageEditedNotification>? _editedSub;
+  StreamSubscription<MessageDeletedNotification>? _deletedSub;
+  StreamSubscription<TypingNotification>? _typingSub;
+  StreamSubscription<ReactionUpdatedNotification>? _reactionSub;
+  StreamSubscription<MessagePinnedNotification>? _pinnedSub;
+
   Timer? _minuteTimer;
   List<Message> _messages = [];
   bool _isLoading = true;
@@ -86,14 +92,25 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   int _optimisticCounter = -1;
   bool _showEmojiPicker = false;
   Map<int, String> _memberNames = {};
+  Map<int, String?> _memberAvatars = {};
 
-  // Ожидающий отправки файл
+  // Reply / Edit
+  Message? _replyingTo;
+  Message? _editingMessage;
+  PinnedMessage? _localPinnedMessage;
+
+  // Typing indicator
+  final Map<int, String> _typingUsers = {};
+  final Map<int, Timer> _typingTimers = {};
+  Timer? _typingDebounce;
+
+  // Pending file
   String? _pendingFilePath;
   String? _pendingFileName;
   int? _pendingFileSize;
-  String? _pendingFileType; // 'image' | 'video' | 'audio' | 'file'
+  String? _pendingFileType;
 
-  // ── Запись голосовых ────────────────────────────────────────────────────
+  // Voice recording
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
   int _recordingSeconds = 0;
@@ -102,6 +119,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   @override
   void initState() {
     super.initState();
+    _localPinnedMessage = widget.chat.pinnedMessage;
     _loadMessages();
     _subscribeToChat(widget.chat.id);
     _minuteTimer = Timer.periodic(
@@ -113,7 +131,12 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         setState(() => _showEmojiPicker = false);
       }
     });
-    _inputController.addListener(() { if (mounted) setState(() {}); });
+    _inputController.addListener(() {
+      if (mounted) {
+        setState(() {});
+        _sendTypingDebounced();
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -134,6 +157,14 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       _chatSub?.cancel();
       _deliveredSub?.cancel();
       _readSub?.cancel();
+      _editedSub?.cancel();
+      _deletedSub?.cancel();
+      _typingSub?.cancel();
+      _reactionSub?.cancel();
+      _pinnedSub?.cancel();
+      _typingDebounce?.cancel();
+      for (final t in _typingTimers.values) { t.cancel(); }
+
       if (_isRecording) {
         _recorder.cancel();
         _recordingTimer?.cancel();
@@ -147,8 +178,14 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         _pendingFileName = null;
         _pendingFileSize = null;
         _pendingFileType = null;
+        _replyingTo = null;
+        _editingMessage = null;
+        _typingUsers.clear();
+        _typingTimers.clear();
+        _localPinnedMessage = widget.chat.pinnedMessage;
       });
       _memberNames.clear();
+      _memberAvatars.clear();
       _loadMessages();
       _subscribeToChat(widget.chat.id);
 
@@ -164,8 +201,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     _chatSub?.cancel();
     _deliveredSub?.cancel();
     _readSub?.cancel();
+    _editedSub?.cancel();
+    _deletedSub?.cancel();
+    _typingSub?.cancel();
+    _reactionSub?.cancel();
+    _pinnedSub?.cancel();
     _minuteTimer?.cancel();
     _recordingTimer?.cancel();
+    _typingDebounce?.cancel();
+    for (final t in _typingTimers.values) { t.cancel(); }
     _recorder.dispose();
     _inputController.dispose();
     _focusNode.dispose();
@@ -188,6 +232,26 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     _readSub = notif.messageReadStream
         .where((e) => e.chatId == chatId)
         .listen(_onMessageRead);
+
+    _editedSub = notif.messageEditedStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onMessageEdited);
+
+    _deletedSub = notif.messageDeletedStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onMessageDeleted);
+
+    _typingSub = notif.typingStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onTyping);
+
+    _reactionSub = notif.reactionUpdatedStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onReactionUpdated);
+
+    _pinnedSub = notif.messagePinnedStream
+        .where((e) => e.chatId == chatId)
+        .listen(_onMessagePinned);
   }
 
   void _onIncomingMessage(ChatMessageNotification n) {
@@ -232,6 +296,70 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     });
   }
 
+  void _onMessageEdited(MessageEditedNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((m) {
+        if (m.id == n.messageId) {
+          return m.copyWith(content: n.newContent, editedAt: n.editedAt);
+        }
+        return m;
+      }).toList();
+    });
+  }
+
+  void _onMessageDeleted(MessageDeletedNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((m) {
+        if (m.id == n.messageId) return m.copyWith(isDeleted: true, content: '');
+        return m;
+      }).toList();
+    });
+  }
+
+  void _onTyping(TypingNotification n) {
+    if (!mounted) return;
+    final myId = int.tryParse(context.read<AuthNotifier>().userId ?? '') ?? -1;
+    if (n.userId == myId) return;
+    _typingTimers[n.userId]?.cancel();
+    setState(() => _typingUsers[n.userId] = n.username);
+    _typingTimers[n.userId] = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _typingUsers.remove(n.userId));
+    });
+  }
+
+  void _onReactionUpdated(ReactionUpdatedNotification n) {
+    if (!mounted) return;
+    setState(() {
+      _messages = _messages.map((m) {
+        if (m.id == n.messageId) {
+          final reactions = n.reactions
+              .map((r) => ReactionGroup.fromJson(r))
+              .toList();
+          return m.copyWith(reactions: reactions);
+        }
+        return m;
+      }).toList();
+    });
+  }
+
+  void _onMessagePinned(MessagePinnedNotification n) {
+    if (!mounted) return;
+    setState(() {
+      if (n.pinned == null) {
+        _localPinnedMessage = null;
+      } else {
+        _localPinnedMessage = PinnedMessage(
+          id: (n.pinned!['id'] as num).toInt(),
+          senderId: (n.pinned!['sender_id'] as num).toInt(),
+          content: n.pinned!['content'] as String? ?? '',
+          type: n.pinned!['type'] as String? ?? 'text',
+        );
+      }
+    });
+  }
+
   Future<void> _loadMessages() async {
     final auth = context.read<AuthNotifier>();
     if (auth.token == null) return;
@@ -269,6 +397,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         if (mounted) {
           setState(() {
             _memberNames = {for (final m in members) m.userId: m.username};
+            _memberAvatars = {for (final m in members) m.userId: m.avatarUrl};
           });
         }
       }
@@ -284,6 +413,14 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           curve: Curves.easeOut,
         );
       }
+    });
+  }
+
+  void _sendTypingDebounced() {
+    if (_editingMessage != null || _inputController.text.isEmpty) return;
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(milliseconds: 500), () {
+      context.read<NotificationNotifier>().sendTyping(widget.chat.id);
     });
   }
 
@@ -442,23 +579,30 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     final hasFile = _pendingFilePath != null;
     if ((text.isEmpty && !hasFile) || _isSending) return;
 
+    // Edit mode
+    if (_editingMessage != null) {
+      await _confirmEdit();
+      return;
+    }
+
     final auth = context.read<AuthNotifier>();
     final myId = int.tryParse(auth.userId ?? '');
     if (myId == null || auth.token == null) return;
 
     if (hasFile) {
-      // Снимаем состояние ожидания и создаём оптимистичное сообщение
       final filePath = _pendingFilePath!;
       final fileName = _pendingFileName;
       final fileSize = _pendingFileSize;
       final fileType = _pendingFileType!;
       final caption = text.isNotEmpty ? text : null;
+      final replyId = _replyingTo?.id;
 
       setState(() {
         _pendingFilePath = null;
         _pendingFileName = null;
         _pendingFileSize = null;
         _pendingFileType = null;
+        _replyingTo = null;
         _isSending = true;
       });
       _inputController.clear();
@@ -480,13 +624,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       setState(() => _messages.add(optimistic));
       _scrollToBottom();
 
-      // Сжимаем изображение перед загрузкой (в фоновом изоляте)
       Uint8List? compressed;
       if (fileType == 'image') {
         compressed = await compute(_compressImageFile, filePath);
       }
 
-      // Загружаем файл
       final upload = await _api.uploadFile(
         token: auth.token!,
         filePath: compressed == null ? filePath : null,
@@ -496,14 +638,10 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       if (!mounted) return;
 
       if (upload == null) {
-        setState(() {
-          _isSending = false;
-          // Оставляем optimistic с isOptimistic=true → красный tint
-        });
+        setState(() { _isSending = false; });
         return;
       }
 
-      // Отправляем сообщение с URL
       final sent = await _api.sendMessage(
         chatId: widget.chat.id,
         content: upload.url,
@@ -512,6 +650,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         fileName: upload.fileName,
         fileSize: upload.fileSize,
         caption: caption,
+        replyToId: replyId,
       );
 
       if (mounted) {
@@ -526,11 +665,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         });
       }
     } else {
-      // Обычный текстовый поток
+      final replyId = _replyingTo?.id;
       _inputController.clear();
       _drafts.remove(widget.chat.id);
       if (!_showEmojiPicker) _focusNode.requestFocus();
-      setState(() => _isSending = true);
+      setState(() { _isSending = true; _replyingTo = null; });
 
       final tempId = _optimisticCounter--;
       final optimistic = Message(
@@ -548,6 +687,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         chatId: widget.chat.id,
         content: text,
         token: auth.token!,
+        replyToId: replyId,
       );
 
       if (mounted) {
@@ -569,6 +709,227 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     }
   }
 
+  Future<void> _confirmEdit() async {
+    final msg = _editingMessage;
+    if (msg == null) return;
+    final text = _inputController.text.trim();
+    if (text.isEmpty || text == msg.content) {
+      _cancelEdit();
+      return;
+    }
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    setState(() { _editingMessage = null; });
+    _inputController.clear();
+
+    final updated = await _api.editMessage(
+      chatId: widget.chat.id,
+      messageId: msg.id,
+      content: text,
+      token: token,
+    );
+    if (updated != null && mounted) {
+      setState(() {
+        _messages = _messages.map((m) => m.id == msg.id ? updated : m).toList();
+      });
+    }
+  }
+
+  void _cancelEdit() {
+    setState(() { _editingMessage = null; });
+    _inputController.clear();
+  }
+
+  void _cancelReply() {
+    setState(() { _replyingTo = null; });
+  }
+
+  void _showMessageMenu(Message msg, bool isMe) {
+    final isAdmin = widget.chat.isAdmin && widget.chat.isGroup;
+    final canEdit = isMe && !msg.isDeleted && msg.type == 'text';
+    final canDelete = (isMe || isAdmin) && !msg.isDeleted;
+    final canPin = (isMe || isAdmin) && !msg.isDeleted;
+    final isCurrentlyPinned = _localPinnedMessage?.id == msg.id;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final colors = AppColors.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!msg.isDeleted)
+                _menuItem(ctx, Icons.reply, 'Ответить', () {
+                  Navigator.pop(ctx);
+                  setState(() { _replyingTo = msg; _editingMessage = null; });
+                  _focusNode.requestFocus();
+                }),
+              if (msg.type == 'text' && !msg.isDeleted)
+                _menuItem(ctx, Icons.copy_outlined, 'Копировать', () {
+                  Navigator.pop(ctx);
+                  Clipboard.setData(ClipboardData(text: msg.content));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Скопировано'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                }),
+              if (canEdit)
+                _menuItem(ctx, Icons.edit_outlined, 'Редактировать', () {
+                  Navigator.pop(ctx);
+                  setState(() {
+                    _editingMessage = msg;
+                    _replyingTo = null;
+                    _inputController.text = msg.content;
+                    _inputController.selection =
+                        TextSelection.collapsed(offset: msg.content.length);
+                  });
+                  _focusNode.requestFocus();
+                }),
+              if (!msg.isDeleted)
+                _menuItem(ctx, Icons.forward_outlined, 'Переслать', () {
+                  Navigator.pop(ctx);
+                  _showForwardSheet(msg);
+                }),
+              if (canPin)
+                _menuItem(
+                  ctx,
+                  isCurrentlyPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  isCurrentlyPinned ? 'Открепить' : 'Закрепить',
+                  () async {
+                    Navigator.pop(ctx);
+                    final token = context.read<AuthNotifier>().token;
+                    if (token == null) return;
+                    if (isCurrentlyPinned) {
+                      await _api.unpinMessage(chatId: widget.chat.id, token: token);
+                      if (mounted) setState(() => _localPinnedMessage = null);
+                    } else {
+                      final ok = await _api.pinMessage(
+                        chatId: widget.chat.id, messageId: msg.id, token: token);
+                      if (ok && mounted) {
+                        setState(() => _localPinnedMessage = PinnedMessage(
+                          id: msg.id, senderId: msg.senderId,
+                          content: msg.content, type: msg.type,
+                        ));
+                      }
+                    }
+                  },
+                ),
+              if (!msg.isDeleted)
+                _menuItem(ctx, Icons.emoji_emotions_outlined, 'Реакция', () {
+                  Navigator.pop(ctx);
+                  _showReactionPicker(msg);
+                }),
+              if (canDelete)
+                _menuItem(ctx, Icons.delete_outline, 'Удалить', () async {
+                  Navigator.pop(ctx);
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (dctx) => AlertDialog(
+                      title: const Text('Удалить сообщение?'),
+                      content: const Text('Сообщение удалится у всех участников.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dctx, false),
+                          child: const Text('Отмена'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(dctx, true),
+                          child: const Text('Удалить',
+                              style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm != true || !mounted) return;
+                  final token = context.read<AuthNotifier>().token;
+                  if (token == null) return;
+                  final ok = await _api.deleteMessage(
+                    chatId: widget.chat.id, messageId: msg.id, token: token);
+                  if (!ok && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Не удалось удалить сообщение')),
+                    );
+                  }
+                }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _menuItem(BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
+    final colors = AppColors.of(ctx);
+    return ListTile(
+      leading: Icon(icon, color: colors.textPrimary, size: 22),
+      title: Text(label, style: TextStyle(color: colors.textPrimary, fontSize: 15)),
+      dense: true,
+      onTap: onTap,
+    );
+  }
+
+  void _showReactionPicker(Message msg) {
+    const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎'];
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final colors = AppColors.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: emojis.map((e) => GestureDetector(
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _api.toggleReaction(
+                  chatId: widget.chat.id,
+                  messageId: msg.id,
+                  emoji: e,
+                  token: token,
+                );
+              },
+              child: Text(e, style: const TextStyle(fontSize: 30)),
+            )).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showForwardSheet(Message msg) {
+    final token = context.read<AuthNotifier>().token;
+    final username = context.read<AuthNotifier>().username ?? '';
+    if (token == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ForwardSheet(
+        chatService: _api,
+        token: token,
+        message: msg,
+        senderUsername: username,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
@@ -581,6 +942,10 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           Divider(height: 1, color: colors.divider),
           Expanded(child: _buildMessageList(chatSettings)),
           Divider(height: 1, color: colors.divider),
+          if (_typingUsers.isNotEmpty) _buildTypingIndicator(colors),
+          if (_editingMessage != null) _buildEditBar(colors),
+          if (_replyingTo != null && _editingMessage == null)
+            _buildReplyPreviewBar(colors),
           if (_pendingFilePath != null) _buildPendingAttachment(colors),
           if (_isRecording)
             _buildRecordingBar(colors)
@@ -595,6 +960,99 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                     config: AppTheme.emojiPickerConfig(colors),
                   )
                 : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator(AppColors colors) {
+    final names = _typingUsers.values.toList();
+    final text = names.length == 1
+        ? '${names[0]} печатает...'
+        : '${names.join(', ')} печатают...';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Row(
+        children: [
+          _TypingDots(color: colors.textSecondary),
+          const SizedBox(width: 8),
+          Text(text, style: TextStyle(fontSize: 12, color: colors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditBar(AppColors colors) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+      color: AppTheme.accentIndigo.withValues(alpha: 0.08),
+      child: Row(
+        children: [
+          const Icon(Icons.edit, size: 16, color: AppTheme.accentIndigo),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Редактирование',
+              style: TextStyle(fontSize: 12, color: AppTheme.accentIndigo),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(Icons.close, size: 16, color: colors.textSecondary),
+            onPressed: _cancelEdit,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyPreviewBar(AppColors colors) {
+    final reply = _replyingTo!;
+    final previewText = reply.isDeleted
+        ? 'Сообщение удалено'
+        : (reply.type == 'text' ? reply.content : '[${reply.type}]');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+      color: AppTheme.accentIndigo.withValues(alpha: 0.08),
+      child: Row(
+        children: [
+          Container(
+            width: 3, height: 36,
+            decoration: BoxDecoration(
+              color: AppTheme.accentIndigo,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _memberNames[reply.senderId] ?? 'Пользователь',
+                  style: const TextStyle(
+                    fontSize: 12, color: AppTheme.accentIndigo,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  previewText,
+                  style: TextStyle(fontSize: 12, color: colors.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(Icons.close, size: 16, color: colors.textSecondary),
+            onPressed: _cancelReply,
           ),
         ],
       ),
@@ -672,77 +1130,116 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     final isGroup = chat.isGroup;
     final avatarColor = isGroup ? Colors.teal : AppTheme.accentIndigo;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-            onPressed: widget.onBack,
-          ),
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: avatarColor.withValues(alpha: 0.2),
-            child: Text(
-              chat.avatarInitial,
-              style: TextStyle(
-                  color: avatarColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: isGroup ? null : () => UserProfileSheet.show(context, chat.partnerId),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    chat.displayName,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                onPressed: widget.onBack,
+              ),
+              UserAvatar(
+                avatarUrl: chat.isGroup ? null : chat.partnerAvatarUrl,
+                initial: chat.avatarInitial,
+                radius: 18,
+                bgColor: avatarColor.withValues(alpha: 0.2),
+                textColor: avatarColor,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: isGroup ? null : () => UserProfileSheet.show(context, chat.partnerId),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        chat.displayName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      if (isGroup)
+                        Text(
+                          "${chat.memberCount ?? '?'} участников",
+                          style: TextStyle(
+                              color: colors.textSecondary, fontSize: 11),
+                        )
+                      else if (context
+                          .watch<NotificationNotifier>()
+                          .isOnline(chat.partnerId))
+                        const Text(
+                          'В сети',
+                          style: TextStyle(color: Color(0xFF4CAF50), fontSize: 11),
+                        ),
+                    ],
                   ),
-                  if (isGroup)
-                    Text(
-                      "${chat.memberCount ?? '?'} участников",
-                      style: TextStyle(
-                          color: colors.textSecondary, fontSize: 11),
-                    )
-                  else if (context
-                      .watch<NotificationNotifier>()
-                      .isOnline(chat.partnerId))
-                    const Text(
-                      'В сети',
-                      style: TextStyle(color: Color(0xFF4CAF50), fontSize: 11),
-                    ),
-                ],
+                ),
+              ),
+              if (isGroup)
+                IconButton(
+                  icon: Icon(Icons.info_outline,
+                      size: 20, color: colors.textSecondary),
+                  tooltip: "Информация о группе",
+                  onPressed: _openGroupInfo,
+                ),
+              IconButton(
+                icon: Icon(Icons.photo_library_outlined,
+                    size: 20, color: colors.textSecondary),
+                tooltip: "Вложения",
+                onPressed: _openAttachments,
+              ),
+              IconButton(
+                icon: Icon(Icons.refresh,
+                    size: 20, color: colors.textSecondary),
+                onPressed: () {
+                  setState(() => _isLoading = true);
+                  _loadMessages();
+                },
+              ),
+            ],
+          ),
+        ),
+        if (_localPinnedMessage != null) _buildPinBanner(colors),
+      ],
+    );
+  }
+
+  Widget _buildPinBanner(AppColors colors) {
+    final pin = _localPinnedMessage!;
+    final preview = pin.type == 'text'
+        ? pin.content
+        : '[${pin.type}]';
+    return GestureDetector(
+      onTap: () {
+        final idx = _messages.indexWhere((m) => m.id == pin.id);
+        if (idx >= 0 && _scrollController.hasClients) {
+          _scrollController.animateTo(
+            idx * 72.0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        color: AppTheme.accentIndigo.withValues(alpha: 0.06),
+        child: Row(
+          children: [
+            const Icon(Icons.push_pin, size: 14, color: AppTheme.accentIndigo),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                preview,
+                style: TextStyle(fontSize: 12, color: colors.textSecondary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ),
-          if (isGroup)
-            IconButton(
-              icon: Icon(Icons.info_outline,
-                  size: 20, color: colors.textSecondary),
-              tooltip: "Информация о группе",
-              onPressed: _openGroupInfo,
-            ),
-          IconButton(
-            icon: Icon(Icons.photo_library_outlined,
-                size: 20, color: colors.textSecondary),
-            tooltip: "Вложения",
-            onPressed: _openAttachments,
-          ),
-          IconButton(
-            icon: Icon(Icons.refresh,
-                size: 20, color: colors.textSecondary),
-            onPressed: () {
-              setState(() => _isLoading = true);
-              _loadMessages();
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -814,7 +1311,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         return Column(
           children: [
             if (showDate) _buildDateDivider(msg.createdAt),
-            _buildBubble(msg, isMe, s, compact: s.compactChat && prevSameSender),
+            _buildBubble(msg, isMe, myId, s, compact: s.compactChat && prevSameSender),
           ],
         );
       },
@@ -849,10 +1346,37 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     );
   }
 
-  Widget _buildBubble(Message msg, bool isMe, UserSettings s, {bool compact = false}) {
-    final failed = msg.isOptimistic;
+  Widget _buildBubble(Message msg, bool isMe, int myId, UserSettings s, {bool compact = false}) {
     final colors = AppColors.of(context);
 
+    // Deleted message placeholder
+    if (msg.isDeleted) {
+      final widget_ = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: colors.surface.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: colors.divider),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.block, size: 13, color: colors.textSecondary),
+          const SizedBox(width: 6),
+          Text(
+            'Сообщение удалено',
+            style: TextStyle(
+              fontSize: 13, color: colors.textSecondary,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ]),
+      );
+      return Align(
+        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+        child: Padding(padding: EdgeInsets.only(bottom: compact ? 2 : 4), child: widget_),
+      );
+    }
+
+    final failed = msg.isOptimistic;
     final hasCaption = (msg.type == 'image' || msg.type == 'video') &&
         (msg.caption?.isNotEmpty ?? false);
 
@@ -877,7 +1401,6 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
     final isMedia = msg.type == 'image' || msg.type == 'video';
 
-    // Для медиа оборачиваем контент в Stack с оверлеем времени
     Widget content = messageContent;
     if (isMedia) {
       content = Stack(
@@ -938,6 +1461,10 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         crossAxisAlignment:
             isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
+          if (msg.forwardedFromUsername != null)
+            _buildForwardHeader(msg, isMe, colors),
+          if (msg.repliedTo != null)
+            _buildReplyQuote(msg.repliedTo!, isMe, colors),
           content,
           if (hasCaption)
             Padding(
@@ -964,6 +1491,20 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                         : colors.textSecondary,
                   ),
                 ),
+                if (msg.editedAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      'изм.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isMe
+                            ? Colors.white.withValues(alpha: 0.5)
+                            : colors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
                 if (isMe) ...[
                   const SizedBox(width: 4),
                   _buildStatusIcon(msg),
@@ -975,9 +1516,22 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       ),
     );
 
+    final bubbleWithReactions = Column(
+      crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onLongPress: () => _showMessageMenu(msg, isMe),
+          onSecondaryTap: () => _showMessageMenu(msg, isMe),
+          child: bubble,
+        ),
+        if (msg.reactions.isNotEmpty)
+          _buildReactionRow(msg, myId, colors),
+      ],
+    );
+
     if (!isMe && s.showAvatars) {
       final name = _memberNames[msg.senderId] ?? '?';
-      final initial = name[0].toUpperCase();
       return Padding(
         padding: EdgeInsets.only(bottom: compact ? 2 : 4),
         child: Row(
@@ -985,19 +1539,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           children: [
             compact
                 ? const SizedBox(width: 36)
-                : CircleAvatar(
+                : UserAvatar(
+                    avatarUrl: _memberAvatars[msg.senderId],
+                    initial: name.isNotEmpty ? name[0] : '?',
                     radius: 14,
-                    backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.accentIndigo,
-                          fontWeight: FontWeight.bold),
-                    ),
+                    bgColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+                    textColor: AppTheme.accentIndigo,
                   ),
             const SizedBox(width: 6),
-            bubble,
+            bubbleWithReactions,
           ],
         ),
       );
@@ -1007,7 +1557,132 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
         padding: EdgeInsets.only(bottom: compact ? 2 : 4),
-        child: bubble,
+        child: bubbleWithReactions,
+      ),
+    );
+  }
+
+  Widget _buildForwardHeader(Message msg, bool isMe, AppColors colors) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.forward, size: 13,
+              color: isMe ? Colors.white70 : AppTheme.accentIndigo),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Переслано от @${msg.forwardedFromUsername}',
+              style: TextStyle(
+                fontSize: 11,
+                color: isMe ? Colors.white70 : AppTheme.accentIndigo,
+                fontStyle: FontStyle.italic,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReplyQuote(RepliedMessage reply, bool isMe, AppColors colors) {
+    final quoteText = reply.type == 'text' ? reply.content : '[${reply.type}]';
+    final senderName = _memberNames[reply.senderId] ?? reply.senderUsername;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: isMe
+            ? Colors.white.withValues(alpha: 0.15)
+            : AppTheme.accentIndigo.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(
+          left: BorderSide(
+            color: isMe ? Colors.white54 : AppTheme.accentIndigo,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            senderName,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isMe ? Colors.white70 : AppTheme.accentIndigo,
+            ),
+          ),
+          Text(
+            quoteText,
+            style: TextStyle(
+              fontSize: 11,
+              color: isMe
+                  ? Colors.white.withValues(alpha: 0.75)
+                  : colors.textSecondary,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReactionRow(Message msg, int myId, AppColors colors) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: msg.reactions.map((r) {
+          final isMine = r.hasMine;
+          return GestureDetector(
+            onTap: () async {
+              final token = context.read<AuthNotifier>().token;
+              if (token == null) return;
+              await _api.toggleReaction(
+                chatId: widget.chat.id,
+                messageId: msg.id,
+                emoji: r.emoji,
+                token: token,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: isMine
+                    ? AppTheme.accentIndigo.withValues(alpha: 0.2)
+                    : colors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isMine ? AppTheme.accentIndigo : colors.divider,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(r.emoji, style: const TextStyle(fontSize: 14)),
+                  if (r.count > 1) ...[
+                    const SizedBox(width: 3),
+                    Text(
+                      '${r.count}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isMine ? AppTheme.accentIndigo : colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -1202,18 +1877,20 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
   Widget _buildInputArea(UserSettings s) {
     final colors = AppColors.of(context);
+    final isEditMode = _editingMessage != null;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(Icons.add_rounded,
-                color: _pendingFilePath != null
-                    ? AppTheme.accentIndigo
-                    : colors.textSecondary,
-                size: 24),
-            onPressed: _pickFile,
-          ),
+          if (!isEditMode)
+            IconButton(
+              icon: Icon(Icons.add_rounded,
+                  color: _pendingFilePath != null
+                      ? AppTheme.accentIndigo
+                      : colors.textSecondary,
+                  size: 24),
+              onPressed: _pickFile,
+            ),
           Expanded(
             child: TextField(
               controller: _inputController,
@@ -1225,9 +1902,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                   : TextInputAction.newline,
               onSubmitted: s.sendOnEnter ? (_) => _sendMessage() : null,
               decoration: InputDecoration(
-                hintText: _pendingFilePath != null
-                    ? "Подпись (необязательно)..."
-                    : "Напишите что-нибудь...",
+                hintText: isEditMode
+                    ? "Редактировать сообщение..."
+                    : _pendingFilePath != null
+                        ? "Подпись (необязательно)..."
+                        : "Напишите что-нибудь...",
                 hintStyle: TextStyle(color: colors.textSecondary, fontSize: 14),
                 filled: true,
                 fillColor: colors.surface,
@@ -1240,24 +1919,25 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               ),
             ),
           ),
-          IconButton(
-            icon: Icon(
-              _showEmojiPicker
-                  ? Icons.keyboard_rounded
-                  : Icons.emoji_emotions_outlined,
-              color: colors.textSecondary,
-              size: 22,
+          if (!isEditMode)
+            IconButton(
+              icon: Icon(
+                _showEmojiPicker
+                    ? Icons.keyboard_rounded
+                    : Icons.emoji_emotions_outlined,
+                color: colors.textSecondary,
+                size: 22,
+              ),
+              onPressed: () {
+                if (_showEmojiPicker) {
+                  setState(() => _showEmojiPicker = false);
+                  _focusNode.requestFocus();
+                } else {
+                  _focusNode.unfocus();
+                  setState(() => _showEmojiPicker = true);
+                }
+              },
             ),
-            onPressed: () {
-              if (_showEmojiPicker) {
-                setState(() => _showEmojiPicker = false);
-                _focusNode.requestFocus();
-              } else {
-                _focusNode.unfocus();
-                setState(() => _showEmojiPicker = true);
-              }
-            },
-          ),
           const SizedBox(width: 4),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 150),
@@ -1270,35 +1950,47 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                             strokeWidth: 2,
                             color: AppTheme.accentIndigo)),
                   )
-                : _shouldShowMicButton()
+                : isEditMode
                     ? GestureDetector(
-                        key: const ValueKey('mic'),
-                        onTap: _startRecording,
+                        key: const ValueKey('confirm_edit'),
+                        onTap: _confirmEdit,
                         child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: AppColors.of(context).surface,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.mic_rounded,
-                              color: AppColors.of(context).textSecondary, size: 22),
-                        ),
-                      )
-                    : GestureDetector(
-                        key: const ValueKey('send'),
-                        onTap: _sendMessage,
-                        child: Container(
-                          width: 44,
-                          height: 44,
+                          width: 44, height: 44,
                           decoration: const BoxDecoration(
                             color: AppTheme.accentIndigo,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.send_rounded,
-                              color: Colors.white, size: 20),
+                          child: const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 22),
                         ),
-                      ),
+                      )
+                    : _shouldShowMicButton()
+                        ? GestureDetector(
+                            key: const ValueKey('mic'),
+                            onTap: _startRecording,
+                            child: Container(
+                              width: 44, height: 44,
+                              decoration: BoxDecoration(
+                                color: AppColors.of(context).surface,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.mic_rounded,
+                                  color: AppColors.of(context).textSecondary, size: 22),
+                            ),
+                          )
+                        : GestureDetector(
+                            key: const ValueKey('send'),
+                            onTap: _sendMessage,
+                            child: Container(
+                              width: 44, height: 44,
+                              decoration: const BoxDecoration(
+                                color: AppTheme.accentIndigo,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.send_rounded,
+                                  color: Colors.white, size: 20),
+                            ),
+                          ),
           ),
         ],
       ),
@@ -1327,6 +2019,159 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ';
   }
 }
+
+// ── Animated typing dots ────────────────────────────────────────────────────
+
+class _TypingDots extends StatefulWidget {
+  final Color color;
+  const _TypingDots({required this.color});
+
+  @override
+  State<_TypingDots> createState() => _TypingDotsState();
+}
+
+class _TypingDotsState extends State<_TypingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            final offset = ((_ctrl.value * 3) - i).clamp(0.0, 1.0);
+            final scale = 0.6 + 0.4 * (offset < 0.5 ? offset * 2 : (1 - offset) * 2);
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: Transform.scale(
+                scale: scale,
+                child: Container(
+                  width: 5, height: 5,
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+// ── Forward sheet ───────────────────────────────────────────────────────────
+
+class _ForwardSheet extends StatefulWidget {
+  final ChatService chatService;
+  final String token;
+  final Message message;
+  final String senderUsername;
+
+  const _ForwardSheet({
+    required this.chatService,
+    required this.token,
+    required this.message,
+    required this.senderUsername,
+  });
+
+  @override
+  State<_ForwardSheet> createState() => _ForwardSheetState();
+}
+
+class _ForwardSheetState extends State<_ForwardSheet> {
+  List<Chat> _chats = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final chats = await widget.chatService.getChats(token: widget.token);
+    if (mounted) setState(() { _chats = chats; _loading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.6,
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Переслать в...',
+                style: TextStyle(
+                    color: colors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
+          ),
+          Divider(height: 1, color: colors.divider),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                : ListView.builder(
+                    itemCount: _chats.length,
+                    itemBuilder: (ctx, i) {
+                      final chat = _chats[i];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+                          child: Text(chat.avatarInitial[0],
+                              style: const TextStyle(color: AppTheme.accentIndigo)),
+                        ),
+                        title: Text(chat.displayName,
+                            style: TextStyle(color: colors.textPrimary)),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await widget.chatService.sendMessage(
+                            chatId: chat.id,
+                            content: widget.message.content,
+                            token: widget.token,
+                            type: widget.message.type,
+                            fileName: widget.message.fileName,
+                            fileSize: widget.message.fileSize,
+                            forwardedFromId: widget.message.senderId,
+                            forwardedFromUsername: widget.senderUsername,
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Video player ─────────────────────────────────────────────────────────────
 
 class _VideoPlayerWidget extends StatefulWidget {
   final String url;
@@ -1364,6 +2209,8 @@ class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
         ),
       );
 }
+
+// ── Audio player ─────────────────────────────────────────────────────────────
 
 class _AudioPlayerWidget extends StatefulWidget {
   final String url;
@@ -1467,6 +2314,8 @@ class _AudioPlayerWidgetState extends State<_AudioPlayerWidget> {
     );
   }
 }
+
+// ── Fullscreen image ─────────────────────────────────────────────────────────
 
 class _FullscreenImagePage extends StatelessWidget {
   final String url;

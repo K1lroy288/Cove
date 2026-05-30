@@ -5,6 +5,7 @@ import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../data/models/voice_room.dart';
 import '../../data/services/voice_service.dart';
 import '../voice_notifier.dart';
+import '../../../../features/user/presentation/widgets/user_avatar.dart';
 
 class VoiceRoomPage extends StatefulWidget {
   const VoiceRoomPage({super.key});
@@ -212,21 +213,16 @@ class _VoiceRoomPageState extends State<VoiceRoomPage>
           child: Stack(
             alignment: Alignment.bottomRight,
             children: [
-              CircleAvatar(
+              UserAvatar(
+                avatarUrl: member.avatarUrl,
+                initial: member.username.isNotEmpty ? member.username[0] : '?',
                 radius: 34,
-                backgroundColor: member.isSpeaking
+                bgColor: member.isSpeaking
                     ? Colors.greenAccent.withValues(alpha: 0.15)
                     : AppColors.of(context).surface,
-                child: Text(
-                  member.username[0].toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: member.isSpeaking
-                        ? Colors.greenAccent
-                        : AppColors.of(context).textPrimary,
-                  ),
-                ),
+                textColor: member.isSpeaking
+                    ? Colors.greenAccent
+                    : AppColors.of(context).textPrimary,
               ),
               if (member.isMuted)
                 Container(

@@ -1,12 +1,14 @@
 class RoomMember {
   final int userId;
   final String username;
+  final String? avatarUrl;
   final bool isMuted;
   bool isSpeaking;
 
   RoomMember({
     required this.userId,
     required this.username,
+    this.avatarUrl,
     this.isMuted = false,
     this.isSpeaking = false,
   });
@@ -15,6 +17,7 @@ class RoomMember {
     return RoomMember(
       userId: (json['user_id'] as num).toInt(),
       username: json['username'] as String,
+      avatarUrl: json['avatar_url'] as String?,
       isMuted: json['is_muted'] as bool? ?? false,
     );
   }

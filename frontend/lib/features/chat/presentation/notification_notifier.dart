@@ -20,6 +20,8 @@ class NotificationNotifier extends ChangeNotifier {
       StreamController.broadcast();
   final StreamController<void> _friendAcceptedController =
       StreamController.broadcast();
+  final StreamController<void> _friendRemovedController =
+      StreamController.broadcast();
 
   // Групповые события
   final StreamController<GroupCreatedNotification> _groupCreatedController =
@@ -37,6 +39,18 @@ class NotificationNotifier extends ChangeNotifier {
   final StreamController<MessageReadNotification> _msgReadController =
       StreamController.broadcast();
 
+  // Новые события
+  final StreamController<MessageEditedNotification> _msgEditedController =
+      StreamController.broadcast();
+  final StreamController<MessageDeletedNotification> _msgDeletedController =
+      StreamController.broadcast();
+  final StreamController<TypingNotification> _typingController =
+      StreamController.broadcast();
+  final StreamController<ReactionUpdatedNotification> _reactionController =
+      StreamController.broadcast();
+  final StreamController<MessagePinnedNotification> _pinnedController =
+      StreamController.broadcast();
+
   int _pendingRequestCount = 0;
   int get pendingRequestCount => _pendingRequestCount;
 
@@ -49,6 +63,7 @@ class NotificationNotifier extends ChangeNotifier {
   Stream<FriendRequestNotification> get friendRequestStream =>
       _friendReqController.stream;
   Stream<void> get friendAcceptedStream => _friendAcceptedController.stream;
+  Stream<void> get friendRemovedStream => _friendRemovedController.stream;
   Stream<GroupCreatedNotification> get groupCreatedStream =>
       _groupCreatedController.stream;
   Stream<GroupUpdatedNotification> get groupUpdatedStream =>
@@ -63,6 +78,15 @@ class NotificationNotifier extends ChangeNotifier {
       _msgDeliveredController.stream;
   Stream<MessageReadNotification> get messageReadStream =>
       _msgReadController.stream;
+  Stream<MessageEditedNotification> get messageEditedStream =>
+      _msgEditedController.stream;
+  Stream<MessageDeletedNotification> get messageDeletedStream =>
+      _msgDeletedController.stream;
+  Stream<TypingNotification> get typingStream => _typingController.stream;
+  Stream<ReactionUpdatedNotification> get reactionUpdatedStream =>
+      _reactionController.stream;
+  Stream<MessagePinnedNotification> get messagePinnedStream =>
+      _pinnedController.stream;
 
   static String get _baseUrl => AppConfig.baseUrl;
 
@@ -110,7 +134,6 @@ class NotificationNotifier extends ChangeNotifier {
       case 'new_message':
         final newMsg = NewMessageNotification.fromPayload(n.payload);
         _msgController.add(newMsg);
-        // Подтверждаем доставку: сообщение пришло на устройство
         ackDelivered(newMsg.chatId, newMsg.messageId);
       case 'friend_request':
         _pendingRequestCount++;
@@ -118,6 +141,8 @@ class NotificationNotifier extends ChangeNotifier {
         notifyListeners();
       case 'friend_accepted':
         _friendAcceptedController.add(null);
+      case 'friend_removed':
+        _friendRemovedController.add(null);
       case 'group_created':
         _groupCreatedController
             .add(GroupCreatedNotification.fromPayload(n.payload));
@@ -140,6 +165,20 @@ class NotificationNotifier extends ChangeNotifier {
       case 'message_read':
         _msgReadController
             .add(MessageReadNotification.fromPayload(n.payload));
+      case 'message_edited':
+        _msgEditedController
+            .add(MessageEditedNotification.fromPayload(n.payload));
+      case 'message_deleted':
+        _msgDeletedController
+            .add(MessageDeletedNotification.fromPayload(n.payload));
+      case 'typing':
+        _typingController.add(TypingNotification.fromPayload(n.payload));
+      case 'reaction_updated':
+        _reactionController
+            .add(ReactionUpdatedNotification.fromPayload(n.payload));
+      case 'message_pinned':
+        _pinnedController
+            .add(MessagePinnedNotification.fromPayload(n.payload));
       case 'user_presence':
         final p = UserPresenceNotification.fromPayload(n.payload);
         _presenceMap[p.userId] = p.isOnline;
@@ -179,6 +218,9 @@ class NotificationNotifier extends ChangeNotifier {
   void markRead(int chatId, int messageId) =>
       _wsService.send({'type': 'mark_read', 'chat_id': chatId, 'message_id': messageId});
 
+  void sendTyping(int chatId) =>
+      _wsService.send({'type': 'typing', 'chat_id': chatId});
+
   void decrementPendingCount() {
     if (_pendingRequestCount > 0) {
       _pendingRequestCount = 0;
@@ -204,6 +246,7 @@ class NotificationNotifier extends ChangeNotifier {
     _msgController.close();
     _friendReqController.close();
     _friendAcceptedController.close();
+    _friendRemovedController.close();
     _groupCreatedController.close();
     _groupUpdatedController.close();
     _memberChangedController.close();
@@ -211,6 +254,11 @@ class NotificationNotifier extends ChangeNotifier {
     _roleChangedController.close();
     _msgDeliveredController.close();
     _msgReadController.close();
+    _msgEditedController.close();
+    _msgDeletedController.close();
+    _typingController.close();
+    _reactionController.close();
+    _pinnedController.close();
     super.dispose();
   }
 }

@@ -56,11 +56,13 @@ class UserService {
     }
   }
 
-  Future<UserProfile?> updateProfile(String token, {String? username, String? bio}) async {
+  Future<UserProfile?> updateProfile(String token,
+      {String? username, String? bio, String? avatarUrl}) async {
     try {
       final body = <String, dynamic>{};
       if (username != null) body['username'] = username;
       if (bio != null) body['bio'] = bio;
+      if (avatarUrl != null) body['avatar_url'] = avatarUrl;
       final response = await http.patch(
         Uri.parse('$_baseUrl/user/me'),
         headers: _authHeaders(token),

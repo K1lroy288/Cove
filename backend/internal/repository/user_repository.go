@@ -30,13 +30,16 @@ func (r *UserRepository) GetUserById(id uint) (*model.User, error) {
 	return user, err
 }
 
-func (r *UserRepository) UpdateUser(id uint, username *string, bio *string) error {
+func (r *UserRepository) UpdateUser(id uint, username *string, bio *string, avatarURL *string) error {
 	updates := map[string]interface{}{}
 	if username != nil {
 		updates["username"] = *username
 	}
 	if bio != nil {
 		updates["bio"] = *bio
+	}
+	if avatarURL != nil {
+		updates["avatar_url"] = *avatarURL
 	}
 	if len(updates) == 0 {
 		return nil

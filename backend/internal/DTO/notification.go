@@ -28,6 +28,10 @@ type FriendAcceptedPayload struct {
 	Username string `json:"username"`
 }
 
+type FriendRemovedPayload struct {
+	ByUserID uint `json:"by_user_id"`
+}
+
 type GroupCreatedPayload struct {
 	ChatID      uint   `json:"chat_id"`
 	GroupName   string `json:"group_name"`
@@ -73,8 +77,38 @@ type MessageReadPayload struct {
 }
 
 type UserPresencePayload struct {
-	UserID   uint `json:"user_id"`
-	IsOnline bool `json:"is_online"`
+	UserID      uint       `json:"user_id"`
+	IsOnline    bool       `json:"is_online"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type MessageEditedPayload struct {
+	ChatID     uint      `json:"chat_id"`
+	MessageID  uint      `json:"message_id"`
+	NewContent string    `json:"new_content"`
+	EditedAt   time.Time `json:"edited_at"`
+}
+
+type MessageDeletedPayload struct {
+	ChatID    uint `json:"chat_id"`
+	MessageID uint `json:"message_id"`
+}
+
+type TypingPayload struct {
+	ChatID   uint   `json:"chat_id"`
+	UserID   uint   `json:"user_id"`
+	Username string `json:"username"`
+}
+
+type ReactionUpdatedPayload struct {
+	ChatID    uint               `json:"chat_id"`
+	MessageID uint               `json:"message_id"`
+	Reactions []ReactionGroupDTO `json:"reactions"`
+}
+
+type MessagePinnedPayload struct {
+	ChatID    uint             `json:"chat_id"`
+	Pinned    *PinnedMessageDTO `json:"pinned"`
 }
 
 func NewNotification(typeName string, payload any) (NotificationDTO, error) {

@@ -3,20 +3,22 @@ package dto
 import "time"
 
 type ChatDTO struct {
-	ID            uint       `json:"id"`
-	ChatType      string     `json:"chat_type"`
+	ID                uint       `json:"id"`
+	ChatType          string     `json:"chat_type"`
 	// DM fields (zero for groups)
-	PartnerID     uint       `json:"partner_id"`
-	PartnerName   string     `json:"partner_name"`
+	PartnerID         uint       `json:"partner_id"`
+	PartnerName       string     `json:"partner_name"`
+	PartnerAvatarURL  *string    `json:"partner_avatar_url,omitempty"`
 	// Group fields (zero for DMs)
-	GroupName     string     `json:"group_name,omitempty"`
-	GroupAvatar   string     `json:"group_avatar,omitempty"`
-	MemberCount   int        `json:"member_count,omitempty"`
-	MyRole        string     `json:"my_role,omitempty"`
+	GroupName         string     `json:"group_name,omitempty"`
+	GroupAvatar       string     `json:"group_avatar,omitempty"`
+	MemberCount       int        `json:"member_count,omitempty"`
+	MyRole            string     `json:"my_role,omitempty"`
 	// Shared
-	LastMessage   *string    `json:"last_message"`
-	LastMessageAt *time.Time `json:"last_message_at"`
-	UnreadCount   int        `json:"unread_count"`
+	LastMessage       *string           `json:"last_message"`
+	LastMessageAt     *time.Time        `json:"last_message_at"`
+	UnreadCount       int               `json:"unread_count"`
+	PinnedMessage     *PinnedMessageDTO `json:"pinned_message,omitempty" gorm:"-"`
 }
 
 type CreateChatRequest struct {
@@ -39,8 +41,9 @@ type AddMembersRequest struct {
 }
 
 type GroupMemberDTO struct {
-	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
-	JoinedAt string `json:"joined_at"`
+	UserID    uint   `json:"user_id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	JoinedAt  string `json:"joined_at"`
+	AvatarURL string `json:"avatar_url"`
 }

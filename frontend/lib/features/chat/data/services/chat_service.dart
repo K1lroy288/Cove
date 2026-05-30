@@ -110,12 +110,18 @@ class ChatService {
     String? fileName,
     int? fileSize,
     String? caption,
+    int? replyToId,
+    int? forwardedFromId,
+    String? forwardedFromUsername,
   }) async {
     try {
       final body = <String, dynamic>{'content': content, 'type': type};
       if (fileName != null) body['file_name'] = fileName;
       if (fileSize != null) body['file_size'] = fileSize;
       if (caption != null && caption.isNotEmpty) body['caption'] = caption;
+      if (replyToId != null) body['reply_to_id'] = replyToId;
+      if (forwardedFromId != null) body['forwarded_from_id'] = forwardedFromId;
+      if (forwardedFromUsername != null) body['forwarded_from_username'] = forwardedFromUsername;
       final response = await http.post(
         Uri.parse('$_baseUrl/chat/$chatId/messages'),
         headers: _authHeaders(token),
@@ -128,6 +134,126 @@ class ChatService {
     } catch (e) {
       log("Error sendMessage: $e");
       return null;
+    }
+  }
+
+  Future<Message?> editMessage({
+    required int chatId,
+    required int messageId,
+    required String content,
+    required String token,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_baseUrl/chat/$chatId/messages/$messageId'),
+        headers: _authHeaders(token),
+        body: jsonEncode({'content': content}),
+      );
+      if (response.statusCode == 200) {
+        return Message.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+      }
+      return null;
+    } catch (e) {
+      log("Error editMessage: $e");
+      return null;
+    }
+  }
+
+  Future<bool> deleteMessage({
+    required int chatId,
+    required int messageId,
+    required String token,
+  }) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/chat/$chatId/messages/$messageId'),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 204;
+    } catch (e) {
+      log("Error deleteMessage: $e");
+      return false;
+    }
+  }
+
+  Future<List<ReactionGroup>> toggleReaction({
+    required int chatId,
+    required int messageId,
+    required String emoji,
+    required String token,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/chat/$chatId/messages/$messageId/reactions'),
+        headers: _authHeaders(token),
+        body: jsonEncode({'emoji': emoji}),
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final raw = body['reactions'] as List<dynamic>? ?? [];
+        return raw.map((e) => ReactionGroup.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      return [];
+    } catch (e) {
+      log("Error toggleReaction: $e");
+      return [];
+    }
+  }
+
+  Future<List<Message>> searchMessages({
+    required int chatId,
+    required String query,
+    required String token,
+    int limit = 20,
+    int? before,
+  }) async {
+    try {
+      final q = StringBuffer('?q=${Uri.encodeComponent(query)}&limit=$limit');
+      if (before != null) q.write('&before=$before');
+      final response = await http.get(
+        Uri.parse('$_baseUrl/chat/$chatId/messages/search${q.toString()}'),
+        headers: _authHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final raw = body['messages'] as List<dynamic>? ?? [];
+        return raw.map((e) => Message.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      return [];
+    } catch (e) {
+      log("Error searchMessages: $e");
+      return [];
+    }
+  }
+
+  Future<bool> pinMessage({
+    required int chatId,
+    required int messageId,
+    required String token,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('$_baseUrl/chat/$chatId/pin'),
+        headers: _authHeaders(token),
+        body: jsonEncode({'message_id': messageId}),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      log("Error pinMessage: $e");
+      return false;
+    }
+  }
+
+  Future<bool> unpinMessage({required int chatId, required String token}) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/chat/$chatId/pin'),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 204;
+    } catch (e) {
+      log("Error unpinMessage: $e");
+      return false;
     }
   }
 

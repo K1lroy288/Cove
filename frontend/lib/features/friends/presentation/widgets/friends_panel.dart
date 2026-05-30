@@ -5,6 +5,7 @@ import '../../../../features/auth/presentation/auth_notifier.dart';
 import '../../../../features/chat/data/models/chat.dart';
 import '../../../../features/chat/data/services/chat_service.dart';
 import '../../../../features/chat/presentation/notification_notifier.dart';
+import '../../../../features/user/presentation/widgets/user_avatar.dart';
 import '../../../../features/user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/friend.dart';
 import '../../data/services/friendship_service.dart';
@@ -252,13 +253,9 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
   Widget _buildFriendTile(Friend friend) {
     final isOpening = _openingChatForId == friend.id;
-    final initial = friend.username.isNotEmpty
-        ? friend.username[0].toUpperCase()
-        : '?';
     final appColors = AppColors.of(context);
     final online = context.watch<NotificationNotifier>().isOnline(friend.id);
 
-    // Случайный, но стабильный цвет на основе ID
     final palette = [
       AppTheme.accentIndigo,
       Colors.teal,
@@ -267,6 +264,12 @@ class _FriendsPanelState extends State<FriendsPanel> {
       Colors.green,
     ];
     final color = palette[friend.id % palette.length];
+
+    final subtitleText = online
+        ? 'В сети'
+        : friend.lastSeenAt != null
+            ? 'был(а) ${_formatLastSeen(friend.lastSeenAt!)}'
+            : 'Не в сети';
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
@@ -277,17 +280,12 @@ class _FriendsPanelState extends State<FriendsPanel> {
       ),
       leading: Stack(
         children: [
-          CircleAvatar(
+          UserAvatar(
+            avatarUrl: friend.avatarUrl,
+            initial: friend.username.isNotEmpty ? friend.username[0] : '?',
             radius: 24,
-            backgroundColor: color.withValues(alpha: 0.18),
-            child: Text(
-              initial,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
+            bgColor: color.withValues(alpha: 0.18),
+            textColor: color,
           ),
           if (online)
             Positioned(
@@ -310,7 +308,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: appColors.textPrimary),
       ),
       subtitle: Text(
-        online ? 'В сети' : 'Не в сети',
+        subtitleText,
         style: TextStyle(
           fontSize: 12,
           color: online ? const Color(0xFF4CAF50) : appColors.textSecondary,
@@ -323,22 +321,84 @@ class _FriendsPanelState extends State<FriendsPanel> {
               child: CircularProgressIndicator(
                   strokeWidth: 2, color: AppTheme.accentIndigo),
             )
-          : OutlinedButton.icon(
-              onPressed: () => _openChat(friend),
-              icon: const Icon(Icons.chat_bubble_outline, size: 14),
-              label: const Text('Написать'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.accentIndigo,
-                side: BorderSide(
-                    color: AppTheme.accentIndigo.withValues(alpha: 0.5)),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                textStyle: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _openChat(friend),
+                  icon: const Icon(Icons.chat_bubble_outline, size: 14),
+                  label: const Text('Написать'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.accentIndigo,
+                    side: BorderSide(
+                        color: AppTheme.accentIndigo.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert, size: 18, color: appColors.textSecondary),
+                  onSelected: (value) async {
+                    if (value == 'unfriend') _confirmUnfriend(friend);
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'unfriend',
+                      child: Row(children: [
+                        Icon(Icons.person_remove_outlined, size: 18, color: Colors.redAccent),
+                        SizedBox(width: 10),
+                        Text('Удалить из друзей', style: TextStyle(color: Colors.redAccent)),
+                      ]),
+                    ),
+                  ],
+                ),
+              ],
             ),
     );
+  }
+
+  Future<void> _confirmUnfriend(Friend friend) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить из друзей?'),
+        content: Text('Вы уверены, что хотите удалить ${friend.username} из друзей?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    final ok = await _friendshipService.removeFriend(userId: friend.id, token: token);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _friends.removeWhere((f) => f.id == friend.id));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось удалить из друзей')),
+      );
+    }
+  }
+
+  String _formatLastSeen(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'только что';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} мин. назад';
+    if (diff.inHours < 24) return '${diff.inHours} ч. назад';
+    if (diff.inDays == 1) return 'вчера';
+    if (diff.inDays < 7) return '${diff.inDays} дн. назад';
+    return '${dt.day}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
   }
 }

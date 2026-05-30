@@ -213,3 +213,98 @@ func (h *FriendshipHandler) GetFriends(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, friends)
 }
+
+// RemoveFriend удаляет пользователя из друзей.
+// DELETE /friendship/:user_id
+func (h *FriendshipHandler) RemoveFriend(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	friendID, err := parseUintParam(ctx, "user_id")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный user_id"})
+		return
+	}
+
+	if err := h.service.RemoveFriend(userID, friendID); err != nil {
+		log.Printf("remove friend error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	if n, err := dto.NewNotification("friend_removed", dto.FriendRemovedPayload{ByUserID: userID}); err == nil {
+		h.appHub.NotifyUser(friendID, n)
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// BlockUser блокирует пользователя.
+// POST /friendship/:user_id/block
+func (h *FriendshipHandler) BlockUser(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	targetID, err := parseUintParam(ctx, "user_id")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный user_id"})
+		return
+	}
+
+	if err := h.service.BlockUser(userID, targetID); err != nil {
+		log.Printf("block user error: %v", err)
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// UnblockUser снимает блокировку.
+// DELETE /friendship/:user_id/block
+func (h *FriendshipHandler) UnblockUser(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	targetID, err := parseUintParam(ctx, "user_id")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Неверный user_id"})
+		return
+	}
+
+	if err := h.service.UnblockUser(userID, targetID); err != nil {
+		log.Printf("unblock user error: %v", err)
+		ctx.JSON(http.StatusNotFound, gin.H{"message": "Блокировка не найдена"})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// GetBlockedUsers возвращает список заблокированных пользователей.
+// GET /friendship/blocked
+func (h *FriendshipHandler) GetBlockedUsers(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	blocked, err := h.service.GetBlockedUsers(userID)
+	if err != nil {
+		log.Printf("get blocked users error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, blocked)
+}

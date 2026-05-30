@@ -239,3 +239,109 @@ class MessageReadNotification {
     );
   }
 }
+
+class MessageEditedNotification {
+  final int chatId;
+  final int messageId;
+  final String newContent;
+  final DateTime editedAt;
+
+  MessageEditedNotification({
+    required this.chatId,
+    required this.messageId,
+    required this.newContent,
+    required this.editedAt,
+  });
+
+  factory MessageEditedNotification.fromPayload(Map<String, dynamic> p) {
+    return MessageEditedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      messageId: (p['message_id'] as num).toInt(),
+      newContent: p['new_content'] as String? ?? '',
+      editedAt: DateTime.tryParse(p['edited_at'] as String? ?? '') ?? DateTime.now(),
+    );
+  }
+}
+
+class MessageDeletedNotification {
+  final int chatId;
+  final int messageId;
+
+  MessageDeletedNotification({required this.chatId, required this.messageId});
+
+  factory MessageDeletedNotification.fromPayload(Map<String, dynamic> p) {
+    return MessageDeletedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      messageId: (p['message_id'] as num).toInt(),
+    );
+  }
+}
+
+class TypingNotification {
+  final int chatId;
+  final int userId;
+  final String username;
+
+  TypingNotification({
+    required this.chatId,
+    required this.userId,
+    required this.username,
+  });
+
+  factory TypingNotification.fromPayload(Map<String, dynamic> p) {
+    return TypingNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      userId: (p['user_id'] as num).toInt(),
+      username: p['username'] as String? ?? '',
+    );
+  }
+}
+
+class ReactionUpdatedNotification {
+  final int chatId;
+  final int messageId;
+  final List<Map<String, dynamic>> reactions;
+
+  ReactionUpdatedNotification({
+    required this.chatId,
+    required this.messageId,
+    required this.reactions,
+  });
+
+  factory ReactionUpdatedNotification.fromPayload(Map<String, dynamic> p) {
+    return ReactionUpdatedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      messageId: (p['message_id'] as num).toInt(),
+      reactions: (p['reactions'] as List<dynamic>?)
+              ?.map((e) => e as Map<String, dynamic>)
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class MessagePinnedNotification {
+  final int chatId;
+  final Map<String, dynamic>? pinned;
+
+  MessagePinnedNotification({required this.chatId, this.pinned});
+
+  factory MessagePinnedNotification.fromPayload(Map<String, dynamic> p) {
+    return MessagePinnedNotification(
+      chatId: (p['chat_id'] as num).toInt(),
+      pinned: p['pinned'] as Map<String, dynamic>?,
+    );
+  }
+}
+
+class FriendRemovedNotification {
+  final int byUserId;
+
+  FriendRemovedNotification({required this.byUserId});
+
+  factory FriendRemovedNotification.fromPayload(Map<String, dynamic> p) {
+    return FriendRemovedNotification(
+      byUserId: (p['by_user_id'] as num).toInt(),
+    );
+  }
+}

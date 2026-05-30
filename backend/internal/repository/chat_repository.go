@@ -63,6 +63,7 @@ func (r *ChatRepository) GetChatDTO(chatID, myUserID uint) (*dto.ChatDTO, error)
 			'dm'               AS chat_type,
 			u.id               AS partner_id,
 			u.username         AS partner_name,
+			u.avatar_url       AS partner_avatar_url,
 			c.last_message_content AS last_message,
 			c.last_message_at,
 			COALESCE(
@@ -85,6 +86,9 @@ func (r *ChatRepository) GetChatDTO(chatID, myUserID uint) (*dto.ChatDTO, error)
 	}
 	if result.ID == 0 {
 		return nil, nil
+	}
+	if pinned, _ := r.GetPinnedMessage(chatID); pinned != nil {
+		result.PinnedMessage = pinned
 	}
 	return &result, nil
 }
@@ -121,6 +125,9 @@ func (r *ChatRepository) GetGroupChatDTO(chatID, myUserID uint) (*dto.ChatDTO, e
 	if result.ID == 0 {
 		return nil, nil
 	}
+	if pinned, _ := r.GetPinnedMessage(chatID); pinned != nil {
+		result.PinnedMessage = pinned
+	}
 	return &result, nil
 }
 
@@ -133,6 +140,7 @@ func (r *ChatRepository) GetChats(userID uint) ([]dto.ChatDTO, error) {
 			'dm'               AS chat_type,
 			u.id               AS partner_id,
 			u.username         AS partner_name,
+			u.avatar_url       AS partner_avatar_url,
 			''                 AS group_name,
 			''                 AS group_avatar,
 			0                  AS member_count,
@@ -161,6 +169,7 @@ func (r *ChatRepository) GetChats(userID uint) ([]dto.ChatDTO, error) {
 			'group'            AS chat_type,
 			0                  AS partner_id,
 			''                 AS partner_name,
+			NULL               AS partner_avatar_url,
 			c.name             AS group_name,
 			COALESCE(c.avatar, '') AS group_avatar,
 			(SELECT COUNT(*) FROM chat_members gcm WHERE gcm.chat_id = c.id) AS member_count,
@@ -220,7 +229,8 @@ func (r *ChatRepository) GetGroupMembers(chatID uint) ([]dto.GroupMemberDTO, err
 	var members []dto.GroupMemberDTO
 	err := r.DB.Raw(`
 		SELECT cm.user_id, u.username, cm.role,
-		       TO_CHAR(cm.joined_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS joined_at
+		       TO_CHAR(cm.joined_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS joined_at,
+		       COALESCE(u.avatar_url, '') AS avatar_url
 		FROM chat_members cm
 		JOIN users u ON u.id = cm.user_id AND u.deleted_at IS NULL
 		WHERE cm.chat_id = ?
@@ -368,4 +378,32 @@ func (r *ChatRepository) GetGroupMemberIDs(chatID uint) ([]uint, error) {
 		Where("chat_id = ?", chatID).
 		Pluck("user_id", &ids).Error
 	return ids, err
+}
+
+// PinMessage устанавливает закреплённое сообщение для чата.
+func (r *ChatRepository) PinMessage(chatID, messageID uint) error {
+	return r.DB.Model(&model.Chat{}).Where("id = ?", chatID).
+		Update("pinned_message_id", messageID).Error
+}
+
+// UnpinMessage убирает закреплённое сообщение из чата.
+func (r *ChatRepository) UnpinMessage(chatID uint) error {
+	return r.DB.Model(&model.Chat{}).Where("id = ?", chatID).
+		Update("pinned_message_id", nil).Error
+}
+
+// GetPinnedMessage возвращает закреплённое сообщение чата (если есть).
+func (r *ChatRepository) GetPinnedMessage(chatID uint) (*dto.PinnedMessageDTO, error) {
+	var result dto.PinnedMessageDTO
+	err := r.DB.Raw(`
+		SELECT m.id, m.sender_id, m.content, m.type
+		FROM chats c
+		JOIN messages m ON m.id = c.pinned_message_id
+		WHERE c.id = ? AND m.deleted_at IS NULL
+		LIMIT 1
+	`, chatID).Scan(&result).Error
+	if err != nil || result.ID == 0 {
+		return nil, err
+	}
+	return &result, nil
 }

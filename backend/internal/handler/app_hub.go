@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,9 +19,10 @@ import (
 // ── Константы и апгрейдер ────────────────────────────────────────────────────
 
 const (
-	writeWait  = 10 * time.Second
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
+	writeWait       = 10 * time.Second
+	pongWait        = 60 * time.Second
+	pingPeriod      = (pongWait * 9) / 10
+	typingDebounce  = 3 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
@@ -69,7 +71,12 @@ type AppHub struct {
 	markDelivered func(chatID, userID, messageID uint) (senderID uint, err error)
 	markRead      func(chatID, userID, messageID uint) (senderID uint, err error)
 	getFriendIDs  func(userID uint) ([]uint, error)
+	updateLastSeen func(userID uint) error
 	presenceQuery chan presenceQueryMsg
+
+	// typingMu защищает typingLastSent от конкурентного доступа из readPump-горутин.
+	typingMu       sync.Mutex
+	typingLastSent map[uint]map[uint]time.Time // chatID → userID → last sent
 }
 
 func NewAppHub(
@@ -77,21 +84,24 @@ func NewAppHub(
 	markDelivered func(chatID, userID, messageID uint) (uint, error),
 	markRead func(chatID, userID, messageID uint) (uint, error),
 	getFriendIDs func(userID uint) ([]uint, error),
+	updateLastSeen func(userID uint) error,
 ) *AppHub {
 	return &AppHub{
-		users:         make(map[uint]map[*AppClient]bool),
-		chats:         make(map[uint]map[*AppClient]bool),
-		broadcast:     make(chan broadcastMsg, 256),
-		notify:        make(chan notifyMsg, 256),
-		subscribe:     make(chan subMsg, 32),
-		unsubscribe:   make(chan subMsg, 32),
-		register:      make(chan *AppClient),
-		unregister:    make(chan *AppClient),
-		presenceQuery: make(chan presenceQueryMsg, 16),
-		isMember:      isMember,
-		markDelivered: markDelivered,
-		markRead:      markRead,
-		getFriendIDs:  getFriendIDs,
+		users:          make(map[uint]map[*AppClient]bool),
+		chats:          make(map[uint]map[*AppClient]bool),
+		broadcast:      make(chan broadcastMsg, 256),
+		notify:         make(chan notifyMsg, 256),
+		subscribe:      make(chan subMsg, 32),
+		unsubscribe:    make(chan subMsg, 32),
+		register:       make(chan *AppClient),
+		unregister:     make(chan *AppClient),
+		presenceQuery:  make(chan presenceQueryMsg, 16),
+		isMember:       isMember,
+		markDelivered:  markDelivered,
+		markRead:       markRead,
+		getFriendIDs:   getFriendIDs,
+		updateLastSeen: updateLastSeen,
+		typingLastSent: make(map[uint]map[uint]time.Time),
 	}
 }
 
@@ -116,6 +126,13 @@ func (h *AppHub) Run() {
 					if len(room) == 0 {
 						delete(h.users, c.userID)
 						go h.broadcastPresence(c.userID, false)
+						if h.updateLastSeen != nil {
+							go func(uid uint) {
+								if err := h.updateLastSeen(uid); err != nil {
+									log.Printf("updateLastSeen user=%d: %v", uid, err)
+								}
+							}(c.userID)
+						}
 					}
 				}
 			}
@@ -186,7 +203,6 @@ func (h *AppHub) IsOnlineMany(userIDs []uint) map[uint]bool {
 }
 
 // broadcastPresence рассылает статус присутствия всем онлайн-друзьям пользователя.
-// Вызывается в отдельной горутине; NotifyUser — канальный и безопасен.
 func (h *AppHub) broadcastPresence(userID uint, online bool) {
 	if h.getFriendIDs == nil {
 		return
@@ -209,6 +225,7 @@ func (h *AppHub) broadcastPresence(userID uint, online bool) {
 }
 
 // BroadcastToChat рассылает данные всем подписчикам чата, кроме отправителя.
+// excludeUserID == 0 означает "рассылать всем".
 func (h *AppHub) BroadcastToChat(chatID, senderID uint, data []byte) {
 	select {
 	case h.broadcast <- broadcastMsg{chatID: chatID, excludeUserID: senderID, data: data}:
@@ -231,6 +248,35 @@ func (h *AppHub) NotifyUser(userID uint, n dto.NotificationDTO) {
 	}
 }
 
+// broadcastTyping отправляет typing-нотификацию в чат с дебаунсом (не чаще 1 раза в 3 сек).
+func (h *AppHub) broadcastTyping(chatID, userID uint, username string) {
+	h.typingMu.Lock()
+	if h.typingLastSent[chatID] == nil {
+		h.typingLastSent[chatID] = make(map[uint]time.Time)
+	}
+	last := h.typingLastSent[chatID][userID]
+	if time.Since(last) < typingDebounce {
+		h.typingMu.Unlock()
+		return
+	}
+	h.typingLastSent[chatID][userID] = time.Now()
+	h.typingMu.Unlock()
+
+	n, err := dto.NewNotification("typing", dto.TypingPayload{
+		ChatID:   chatID,
+		UserID:   userID,
+		Username: username,
+	})
+	if err != nil {
+		return
+	}
+	data, err := json.Marshal(n)
+	if err != nil {
+		return
+	}
+	h.BroadcastToChat(chatID, userID, data)
+}
+
 // ServeWS обрабатывает GET /ws?token= — единственный WS-эндпоинт.
 func (h *AppHub) ServeWS(ctx *gin.Context) {
 	claims, err := parseTokenClaims(ctx.Query("token"))
@@ -246,10 +292,11 @@ func (h *AppHub) ServeWS(ctx *gin.Context) {
 	}
 
 	c := &AppClient{
-		hub:    h,
-		userID: claims.UserID,
-		conn:   conn,
-		send:   make(chan []byte, 256),
+		hub:      h,
+		userID:   claims.UserID,
+		username: claims.Username,
+		conn:     conn,
+		send:     make(chan []byte, 256),
 	}
 	h.register <- c
 	go c.writePump()
@@ -259,10 +306,11 @@ func (h *AppHub) ServeWS(ctx *gin.Context) {
 // ── AppClient ─────────────────────────────────────────────────────────────────
 
 type AppClient struct {
-	hub    *AppHub
-	userID uint
-	conn   *websocket.Conn
-	send   chan []byte
+	hub      *AppHub
+	userID   uint
+	username string
+	conn     *websocket.Conn
+	send     chan []byte
 }
 
 func (c *AppClient) readPump() {
@@ -299,6 +347,11 @@ func (c *AppClient) readPump() {
 			}
 		case "unsubscribe_chat":
 			c.hub.unsubscribe <- subMsg{client: c, chatID: cmd.ChatID}
+		case "typing":
+			if cmd.ChatID == 0 {
+				continue
+			}
+			go c.hub.broadcastTyping(cmd.ChatID, c.userID, c.username)
 		case "ack_delivered":
 			if cmd.ChatID == 0 || cmd.MessageID == 0 {
 				continue

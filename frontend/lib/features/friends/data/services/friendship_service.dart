@@ -121,6 +121,62 @@ class FriendshipService {
     }
   }
 
+  Future<bool> removeFriend({required int userId, required String token}) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/friendship/$userId'),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      log("Error removeFriend: $e");
+      return false;
+    }
+  }
+
+  Future<bool> blockUser({required int userId, required String token}) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/friendship/$userId/block'),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      log("Error blockUser: $e");
+      return false;
+    }
+  }
+
+  Future<bool> unblockUser({required int userId, required String token}) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('$_baseUrl/friendship/$userId/block'),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      log("Error unblockUser: $e");
+      return false;
+    }
+  }
+
+  Future<List<Friend>> getBlockedUsers({required String token}) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/friendship/blocked'),
+        headers: _authHeaders(token),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((e) => Friend.fromJson(e as Map<String, dynamic>)).toList();
+      }
+      return [];
+    } catch (e) {
+      log("Error getBlockedUsers: $e");
+      return [];
+    }
+  }
+
   String? _extractMessage(http.Response response) {
     if (response.body.isEmpty) return null;
     try {

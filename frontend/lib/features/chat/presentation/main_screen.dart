@@ -15,6 +15,7 @@ import '../data/services/notification_service.dart';
 import 'notification_notifier.dart';
 import 'widgets/chat_list_panel.dart';
 import 'widgets/chat_window_panel.dart';
+import '../../user/presentation/widgets/user_avatar.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -582,16 +583,12 @@ class _MessageToastState extends State<_MessageToast>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(width: 12),
-                  CircleAvatar(
+                  UserAvatar(
+                    avatarUrl: chat.isGroup ? null : chat.partnerAvatarUrl,
+                    initial: chat.avatarInitial,
                     radius: 18,
-                    backgroundColor: avatarColor.withValues(alpha: 0.2),
-                    child: Text(
-                      chat.avatarInitial,
-                      style: TextStyle(
-                          color: avatarColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold),
-                    ),
+                    bgColor: avatarColor.withValues(alpha: 0.2),
+                    textColor: avatarColor,
                   ),
                   const SizedBox(width: 10),
                   Expanded(

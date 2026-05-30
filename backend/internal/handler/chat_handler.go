@@ -434,6 +434,75 @@ func (h *ChatHandler) SetMemberRole(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "Роль изменена"})
 }
 
+// PinMessage закрепляет сообщение в чате.
+// PATCH /chat/:id/pin
+func (h *ChatHandler) PinMessage(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	chatID, err := parseUintParam(ctx, "id")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Некорректный chat_id"})
+		return
+	}
+
+	var req dto.PinMessageRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Укажите message_id"})
+		return
+	}
+
+	if err := h.service.PinMessage(chatID, userID, req.MessageID); err != nil {
+		log.Printf("pin message error: %v", err)
+		ctx.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+		return
+	}
+
+	pinned, _ := h.service.GetPinnedMessage(chatID)
+	if n, err := dto.NewNotification("message_pinned", dto.MessagePinnedPayload{
+		ChatID: chatID,
+		Pinned: pinned,
+	}); err == nil {
+		h.broadcastJSON(chatID, n)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"pinned": pinned})
+}
+
+// UnpinMessage убирает закреплённое сообщение.
+// DELETE /chat/:id/pin
+func (h *ChatHandler) UnpinMessage(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Необходима авторизация"})
+		return
+	}
+
+	chatID, err := parseUintParam(ctx, "id")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Некорректный chat_id"})
+		return
+	}
+
+	if err := h.service.UnpinMessage(chatID, userID); err != nil {
+		log.Printf("unpin message error: %v", err)
+		ctx.JSON(http.StatusForbidden, gin.H{"message": err.Error()})
+		return
+	}
+
+	if n, err := dto.NewNotification("message_pinned", dto.MessagePinnedPayload{
+		ChatID: chatID,
+		Pinned: nil,
+	}); err == nil {
+		h.broadcastJSON(chatID, n)
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
 // parseUintParam извлекает именованный параметр пути как uint.
 func parseUintParam(ctx *gin.Context, name string) (uint, error) {
 	v, err := strconv.ParseUint(ctx.Param(name), 10, 64)

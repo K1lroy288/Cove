@@ -33,13 +33,13 @@ func (s *UserService) GetPublicUserByUsername(username string) (*dto.User, error
 		}
 		return nil, err
 	}
-	return &dto.User{ID: user.ID, Username: user.Username}, nil
+	return &dto.User{ID: user.ID, Username: user.Username, AvatarURL: user.AvatarURL}, nil
 }
 
 func (s *UserService) SearchUser(query string) (*dto.User, error) {
 	user, err := s.repo.GetUserByUsername(query)
 	if err == nil {
-		return &dto.User{ID: user.ID, Username: user.Username}, nil
+		return &dto.User{ID: user.ID, Username: user.Username, AvatarURL: user.AvatarURL}, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -77,7 +77,7 @@ func (s *UserService) GetUserByID(id uint) (*dto.User, error) {
 		return nil, err
 	}
 
-	return &dto.User{ID: user.ID, Username: user.Username}, nil
+	return &dto.User{ID: user.ID, Username: user.Username, AvatarURL: user.AvatarURL}, nil
 }
 
 func (s *UserService) GetMe(id uint) (*dto.MyProfileDTO, error) {
@@ -89,6 +89,7 @@ func (s *UserService) GetMe(id uint) (*dto.MyProfileDTO, error) {
 		ID:          user.ID,
 		Username:    user.Username,
 		Bio:         user.Bio,
+		AvatarURL:   user.AvatarURL,
 		MemberSince: user.CreatedAt,
 	}, nil
 }
@@ -97,7 +98,7 @@ func (s *UserService) UpdateMe(id uint, req dto.UpdateProfileRequest) (*dto.MyPr
 	if req.Username != nil && len(*req.Username) < 2 {
 		return nil, errors.New("username too short")
 	}
-	if err := s.repo.UpdateUser(id, req.Username, req.Bio); err != nil {
+	if err := s.repo.UpdateUser(id, req.Username, req.Bio, req.AvatarURL); err != nil {
 		return nil, err
 	}
 	return s.GetMe(id)
@@ -135,6 +136,7 @@ func (s *UserService) GetUserProfile(myID, targetID uint) (*dto.UserProfileDTO, 
 		ID:               user.ID,
 		Username:         user.Username,
 		Bio:              user.Bio,
+		AvatarURL:        user.AvatarURL,
 		MemberSince:      user.CreatedAt,
 		FriendshipStatus: status,
 	}, nil

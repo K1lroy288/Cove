@@ -5,6 +5,7 @@ import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../auth/presentation/auth_notifier.dart';
 import '../../../friends/data/models/friend.dart';
 import '../../../friends/data/services/friendship_service.dart';
+import '../../../user/presentation/widgets/user_avatar.dart';
 import '../../data/models/chat.dart';
 import '../../data/services/chat_service.dart';
 
@@ -210,17 +211,12 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
                     title: Text(friend.username,
                         style: TextStyle(
                             fontSize: 14, color: colors.textPrimary)),
-                    secondary: CircleAvatar(
+                    secondary: UserAvatar(
+                      avatarUrl: friend.avatarUrl,
+                      initial: friend.username.isNotEmpty ? friend.username[0] : '?',
                       radius: 18,
-                      backgroundColor:
-                          AppTheme.accentIndigo.withValues(alpha: 0.2),
-                      child: Text(
-                        friend.username[0].toUpperCase(),
-                        style: const TextStyle(
-                            color: AppTheme.accentIndigo,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13),
-                      ),
+                      bgColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+                      textColor: AppTheme.accentIndigo,
                     ),
                     dense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 4),

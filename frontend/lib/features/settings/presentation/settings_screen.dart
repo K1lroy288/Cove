@@ -1,11 +1,34 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../auth/presentation/auth_notifier.dart';
+import '../../chat/data/services/chat_service.dart';
+import '../../friends/data/models/friend.dart';
+import '../../friends/data/services/friendship_service.dart';
 import '../../user/data/models/user_profile.dart';
 import '../../user/data/services/user_service.dart';
+import '../../user/presentation/widgets/user_avatar.dart';
 import 'settings_notifier.dart';
+
+Uint8List? _compressForAvatar(String path) {
+  final bytes = File(path).readAsBytesSync();
+  var image = img.decodeImage(bytes);
+  if (image == null) return null;
+  if (image.width > 512 || image.height > 512) {
+    image = img.copyResize(
+      image,
+      width: image.width >= image.height ? 512 : -1,
+      height: image.height > image.width ? 512 : -1,
+    );
+  }
+  return Uint8List.fromList(img.encodeJpg(image, quality: 85));
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,8 +39,11 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final UserService _userService = UserService();
+  final FriendshipService _friendshipService = FriendshipService();
   UserProfile? _myProfile;
   String? _openCategory;
+  List<Friend> _blockedUsers = [];
+  bool _loadingBlocked = false;
 
   @override
   void initState() {
@@ -40,7 +66,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final usernameCtrl = TextEditingController(text: auth.username ?? '');
     final bioCtrl = TextEditingController(text: _myProfile?.bio ?? '');
     bool saving = false;
+    bool uploadingAvatar = false;
     String? error;
+    String? pendingAvatarUrl = _myProfile?.avatarUrl;
 
     await showDialog(
       context: context,
@@ -50,6 +78,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              GestureDetector(
+                onTap: uploadingAvatar
+                    ? null
+                    : () async {
+                        const typeGroup = XTypeGroup(
+                          label: 'images',
+                          extensions: ['jpg', 'jpeg', 'png', 'webp'],
+                        );
+                        final file = await openFile(acceptedTypeGroups: [typeGroup]);
+                        if (file == null) return;
+                        setS(() => uploadingAvatar = true);
+                        final compressed = await compute(_compressForAvatar, file.path);
+                        if (compressed == null) {
+                          setS(() => uploadingAvatar = false);
+                          return;
+                        }
+                        final result = await ChatService().uploadFile(
+                          token: token,
+                          fileBytes: compressed,
+                          fileName: 'avatar.jpg',
+                        );
+                        setS(() {
+                          uploadingAvatar = false;
+                          if (result != null) pendingAvatarUrl = result.url;
+                        });
+                      },
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    UserAvatar(
+                      avatarUrl: pendingAvatarUrl,
+                      initial: (auth.username ?? 'U').isNotEmpty
+                          ? (auth.username ?? 'U')[0]
+                          : 'U',
+                      radius: 36,
+                    ),
+                    if (uploadingAvatar)
+                      const CircleAvatar(
+                        radius: 36,
+                        backgroundColor: Colors.black45,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.accentIndigo,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt,
+                              color: Colors.white, size: 14),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: usernameCtrl,
                 decoration: const InputDecoration(labelText: 'Имя пользователя'),
@@ -95,6 +184,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         token,
                         username: newUsername != auth.username ? newUsername : null,
                         bio: newBio,
+                        avatarUrl: pendingAvatarUrl != _myProfile?.avatarUrl
+                            ? pendingAvatarUrl
+                            : null,
                       );
                       if (!ctx.mounted || !mounted) return;
                       if (updated != null) {
@@ -293,6 +385,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _loadBlockedUsers() async {
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    setState(() => _loadingBlocked = true);
+    final list = await _friendshipService.getBlockedUsers(token: token);
+    if (mounted) setState(() { _blockedUsers = list; _loadingBlocked = false; });
+  }
+
+  Future<void> _unblock(Friend friend) async {
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    final ok = await _friendshipService.unblockUser(userId: friend.id, token: token);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _blockedUsers.removeWhere((u) => u.id == friend.id));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось разблокировать')),
+      );
+    }
+  }
+
   void _updatePref(
     AuthNotifier auth,
     SettingsNotifier notifier,
@@ -327,6 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _ProfileCard(
           username: username,
           bio: _myProfile?.bio,
+          avatarUrl: _myProfile?.avatarUrl,
           onEdit: _showEditDialog,
         ),
         const SizedBox(height: 24),
@@ -359,6 +474,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: 'Приватность',
           category: 'privacy',
           onTap: (c) => setState(() => _openCategory = c),
+        ),
+        _CategoryTile(
+          icon: Icons.block_outlined,
+          label: 'Заблокированные',
+          category: 'blocked',
+          onTap: (c) {
+            setState(() => _openCategory = c);
+            _loadBlockedUsers();
+          },
         ),
         _CategoryTile(
           icon: Icons.info_outlined,
@@ -582,6 +706,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+      'blocked' => (
+          'Заблокированные',
+          _loadingBlocked
+              ? <Widget>[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.accentIndigo),
+                    ),
+                  ),
+                ]
+              : _blockedUsers.isEmpty
+                  ? <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: Text(
+                            'Нет заблокированных пользователей',
+                            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ]
+                  : _blockedUsers
+                      .map((u) => Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: colors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: ListTile(
+                              contentPadding:
+                                  const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    AppTheme.accentIndigo.withValues(alpha: 0.15),
+                                child: Text(
+                                  u.username.isNotEmpty ? u.username[0].toUpperCase() : '?',
+                                  style: const TextStyle(color: AppTheme.accentIndigo),
+                                ),
+                              ),
+                              title: Text(u.username,
+                                  style: TextStyle(
+                                      color: colors.textPrimary,
+                                      fontWeight: FontWeight.w500)),
+                              trailing: TextButton(
+                                onPressed: () => _unblock(u),
+                                child: const Text('Разблокировать',
+                                    style: TextStyle(color: AppTheme.accentIndigo)),
+                              ),
+                            ),
+                          ))
+                      .toList(),
+        ),
       'about' => (
           'О приложении',
           <Widget>[
@@ -628,12 +807,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class _ProfileCard extends StatelessWidget {
   final String username;
   final String? bio;
+  final String? avatarUrl;
   final VoidCallback onEdit;
 
   const _ProfileCard({
     required this.username,
     required this.onEdit,
     this.bio,
+    this.avatarUrl,
   });
 
   @override
@@ -647,14 +828,10 @@ class _ProfileCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          CircleAvatar(
+          UserAvatar(
+            avatarUrl: avatarUrl,
+            initial: username.isNotEmpty ? username[0] : 'U',
             radius: 34,
-            backgroundColor: AppTheme.accentIndigo,
-            child: Text(
-              username.isNotEmpty ? username[0].toUpperCase() : 'U',
-              style: const TextStyle(
-                  fontSize: 26, color: Colors.white, fontWeight: FontWeight.bold),
-            ),
           ),
           const SizedBox(width: 18),
           Expanded(

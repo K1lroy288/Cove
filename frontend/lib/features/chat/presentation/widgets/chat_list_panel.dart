@@ -8,6 +8,7 @@ import '../../../friends/data/services/friendship_service.dart';
 import '../../../user/data/models/friend_request.dart';
 import '../../../user/data/models/user_dto.dart';
 import '../../../user/data/services/user_service.dart';
+import '../../../user/presentation/widgets/user_avatar.dart';
 import '../../../user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/chat.dart';
 import '../../data/services/chat_service.dart';
@@ -478,14 +479,12 @@ class _ChatListPanelState extends State<ChatListPanel> {
         user.id,
         onOpenChat: widget.onChatSelected,
       ),
-      leading: CircleAvatar(
+      leading: UserAvatar(
+        avatarUrl: user.avatarUrl,
+        initial: user.username.isNotEmpty ? user.username[0] : '?',
         radius: 24,
-        backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
-        child: Text(
-          user.username[0].toUpperCase(),
-          style: const TextStyle(
-              color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
-        ),
+        bgColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+        textColor: AppTheme.accentIndigo,
       ),
       title: Text(user.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -550,14 +549,12 @@ class _ChatListPanelState extends State<ChatListPanel> {
           const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Stack(
         children: [
-          CircleAvatar(
+          UserAvatar(
+            avatarUrl: chat.isGroup ? null : chat.partnerAvatarUrl,
+            initial: chat.avatarInitial,
             radius: 24,
-            backgroundColor: avatarBg,
-            child: Text(
-              chat.avatarInitial,
-              style: TextStyle(
-                  color: avatarColor, fontWeight: FontWeight.bold),
-            ),
+            bgColor: avatarBg,
+            textColor: avatarColor,
           ),
           if (chat.isGroup)
             Positioned(
@@ -669,14 +666,12 @@ class _ChatListPanelState extends State<ChatListPanel> {
     return ListTile(
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: CircleAvatar(
+      leading: UserAvatar(
+        avatarUrl: req.avatarUrl,
+        initial: req.username.isNotEmpty ? req.username[0] : '?',
         radius: 24,
-        backgroundColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
-        child: Text(
-          req.username[0].toUpperCase(),
-          style: const TextStyle(
-              color: AppTheme.accentIndigo, fontWeight: FontWeight.bold),
-        ),
+        bgColor: AppTheme.accentIndigo.withValues(alpha: 0.2),
+        textColor: AppTheme.accentIndigo,
       ),
       title: Text(req.username,
           style: const TextStyle(fontWeight: FontWeight.w600)),

@@ -7,8 +7,9 @@ type Friendship struct {
 }
 
 type FriendRequest struct {
-	UserID   uint   `json:"user_id"`
-	Username string `json:"username"`
+	UserID    uint    `json:"user_id"`
+	Username  string  `json:"username"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
 type RespondToRequestDTO struct {
@@ -16,6 +17,7 @@ type RespondToRequestDTO struct {
 }
 
 type Friend struct {
-	ID       uint   `json:"id"`
-	Username string `json:"username"`
+	ID        uint    `json:"id"`
+	Username  string  `json:"username"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
 }
