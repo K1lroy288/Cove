@@ -136,7 +136,13 @@ func (h *MessageHandler) SendMessage(ctx *gin.Context) {
 		return
 	}
 
-	result := dto.ToMessageDTO(msg)
+	enriched, err := h.service.EnrichMessages([]model.Message{msg}, userID)
+	if err != nil || len(enriched) == 0 {
+		log.Printf("enrich sent message error: %v", err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Ошибка сервера"})
+		return
+	}
+	result := enriched[0]
 
 	// Рассылаем в чат всем кроме отправителя (он получил через REST-ответ)
 	if n, err := dto.NewNotification("chat_message", result); err == nil {

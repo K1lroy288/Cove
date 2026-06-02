@@ -47,6 +47,9 @@ class ChatMessageNotification {
   final String? fileName;
   final int? fileSize;
   final DateTime createdAt;
+  final Map<String, dynamic>? replyTo;
+  final int? forwardedFromId;
+  final String? forwardedFromUsername;
 
   ChatMessageNotification({
     required this.id,
@@ -57,6 +60,9 @@ class ChatMessageNotification {
     this.fileName,
     this.fileSize,
     required this.createdAt,
+    this.replyTo,
+    this.forwardedFromId,
+    this.forwardedFromUsername,
   });
 
   factory ChatMessageNotification.fromPayload(Map<String, dynamic> p) {
@@ -69,6 +75,9 @@ class ChatMessageNotification {
       fileName: p['file_name'] as String?,
       fileSize: p['file_size'] == null ? null : (p['file_size'] as num).toInt(),
       createdAt: DateTime.parse(p['created_at'] as String),
+      replyTo: p['reply_to'] as Map<String, dynamic>?,
+      forwardedFromId: p['forwarded_from_id'] == null ? null : (p['forwarded_from_id'] as num).toInt(),
+      forwardedFromUsername: p['forwarded_from_username'] as String?,
     );
   }
 }

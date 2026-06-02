@@ -266,6 +266,9 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         fileName: n.fileName,
         fileSize: n.fileSize,
         createdAt: n.createdAt,
+        repliedTo: n.replyTo != null ? RepliedMessage.fromJson(n.replyTo!) : null,
+        forwardedFromId: n.forwardedFromId,
+        forwardedFromUsername: n.forwardedFromUsername,
       ));
       _messages.sort((a, b) => a.id.compareTo(b.id));
     });
@@ -854,7 +857,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                   if (token == null) return;
                   final ok = await _api.deleteMessage(
                     chatId: widget.chat.id, messageId: msg.id, token: token);
-                  if (!ok && mounted) {
+                  if (!mounted) return;
+                  if (ok) {
+                    setState(() {
+                      final idx = _messages.indexWhere((m) => m.id == msg.id);
+                      if (idx != -1) {
+                        _messages[idx] = _messages[idx].copyWith(isDeleted: true, content: '');
+                      }
+                    });
+                  } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Не удалось удалить сообщение')),
                     );
