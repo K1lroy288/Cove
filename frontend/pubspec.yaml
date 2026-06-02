@@ -48,6 +48,7 @@ dependencies:
   media_kit_libs_video: any
   record: ^6.0.0
   path_provider: ^2.1.4
+  flutter_secure_storage: ^10.3.1
 
 dev_dependencies:
   flutter_test:

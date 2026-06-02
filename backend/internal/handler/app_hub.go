@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,7 +30,23 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			// прямые WS-соединения без Origin (например, нативные клиенты) — разрешаем
+			return true
+		}
+		allowed := config.GetConfig().AllowedOrigins
+		for _, pattern := range allowed {
+			// поддерживаем wildcards через path.Match (e.g. "http://localhost:*")
+			matched, err := path.Match(strings.ToLower(pattern), strings.ToLower(origin))
+			if err == nil && matched {
+				return true
+			}
+		}
+		log.Printf("ws: rejected origin %q", origin)
+		return false
+	},
 }
 
 // ── Типы сообщений хаба ───────────────────────────────────────────────────────
@@ -301,6 +319,15 @@ func (h *AppHub) ServeWS(ctx *gin.Context) {
 	h.register <- c
 	go c.writePump()
 	go c.readPump()
+
+	// Сразу уведомляем клиента что соединение установлено — клиент не имеет
+	// отдельного «connected» колбэка в WebSocket API, поэтому шлём явное сообщение.
+	if data, err := json.Marshal(map[string]string{"type": "connected"}); err == nil {
+		select {
+		case c.send <- data:
+		default:
+		}
+	}
 }
 
 // ── AppClient ─────────────────────────────────────────────────────────────────

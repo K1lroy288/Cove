@@ -71,6 +71,11 @@ func main() {
 	}
 	uploadHandler := handler.NewUploadHandler(uploadService)
 
+	// Rate limiters
+	authLimiter := middleware.NewRateLimiter(10.0/60, 15)    // 10 req/min per IP, burst 15
+	searchLimiter := middleware.NewRateLimiter(30.0/60, 10)  // 30 req/min per IP
+	msgLimiter := middleware.NewUserRateLimiter(60.0/60, 20) // 60 msg/min per user, burst 20
+
 	r := gin.Default()
 
 	r.GET("/health", func(ctx *gin.Context) {
@@ -79,6 +84,7 @@ func main() {
 
 	// ── Auth (без токена) ────────────────────────────────────────────────────────
 	auth := r.Group("/auth")
+	auth.Use(authLimiter.Middleware())
 	{
 		auth.POST("/login", userHandler.Login)
 		auth.POST("/register", userHandler.CreateUser)
@@ -87,7 +93,7 @@ func main() {
 	// ── Users (без токена) ───────────────────────────────────────────────────────
 	user := r.Group("/user")
 	{
-		user.GET("/search", userHandler.SearchUser)
+		user.GET("/search", searchLimiter.Middleware(), userHandler.SearchUser)
 		user.GET("/username/:username", userHandler.FindUserByUsername)
 		user.GET("/:id", userHandler.FindUserByID)
 	}
@@ -129,7 +135,7 @@ func main() {
 		chat.PATCH("/:id/pin", chatHandler.PinMessage)
 		chat.DELETE("/:id/pin", chatHandler.UnpinMessage)
 		chat.GET("/:id/messages", messageHandler.GetMessages)
-		chat.POST("/:id/messages", messageHandler.SendMessage)
+		chat.POST("/:id/messages", msgLimiter.Middleware(), messageHandler.SendMessage)
 		chat.GET("/:id/messages/search", messageHandler.SearchMessages)
 		chat.PATCH("/:id/messages/:msg_id", messageHandler.EditMessage)
 		chat.DELETE("/:id/messages/:msg_id", messageHandler.DeleteMessage)

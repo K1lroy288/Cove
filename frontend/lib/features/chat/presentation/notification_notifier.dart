@@ -7,10 +7,16 @@ import '../data/models/notification.dart';
 import '../data/services/global_ws_service.dart';
 import '../../../core/config.dart';
 
+enum WsConnectionState { connected, connecting, disconnected }
+
 class NotificationNotifier extends ChangeNotifier {
   final GlobalWsService _wsService = GlobalWsService();
   StreamSubscription<AppNotification>? _sub;
   String? _token;
+  int _reconnectAttempt = 0;
+
+  WsConnectionState _connectionState = WsConnectionState.disconnected;
+  WsConnectionState get connectionState => _connectionState;
 
   final StreamController<ChatMessageNotification> _chatMsgController =
       StreamController.broadcast();
@@ -92,6 +98,7 @@ class NotificationNotifier extends ChangeNotifier {
 
   Future<void> connect(String token) async {
     _token = token;
+    _reconnectAttempt = 0;
     await _sub?.cancel();
     await _fetchInitialCount(token);
     _subscribe();
@@ -99,16 +106,42 @@ class NotificationNotifier extends ChangeNotifier {
 
   void _subscribe() {
     if (_token == null) return;
+    _connectionState = WsConnectionState.connecting;
+    notifyListeners();
+
     _sub = _wsService.connect(_token!).listen(
-      _onNotification,
-      onError: (e) => log('notification ws error: $e'),
+      (n) {
+        if (_connectionState != WsConnectionState.connected) {
+          _connectionState = WsConnectionState.connected;
+          _reconnectAttempt = 0;
+          notifyListeners();
+        }
+        _onNotification(n);
+      },
+      onError: (e) {
+        log('notification ws error: $e');
+        _scheduleReconnect();
+      },
       onDone: () {
-        log('notification ws closed, reconnecting in 3s');
-        Future.delayed(const Duration(seconds: 3), () {
-          if (_token != null) _subscribe();
-        });
+        log('notification ws closed');
+        _scheduleReconnect();
       },
     );
+  }
+
+  void _scheduleReconnect() {
+    if (_token == null) return;
+    _connectionState = WsConnectionState.disconnected;
+    notifyListeners();
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+    final delay = Duration(seconds: (1 << _reconnectAttempt).clamp(1, 30));
+    _reconnectAttempt = (_reconnectAttempt + 1).clamp(0, 5);
+    log('ws reconnecting in ${delay.inSeconds}s (attempt $_reconnectAttempt)');
+
+    Future.delayed(delay, () {
+      if (_token != null) _subscribe();
+    });
   }
 
   Future<void> _fetchInitialCount(String token) async {
@@ -129,6 +162,8 @@ class NotificationNotifier extends ChangeNotifier {
 
   void _onNotification(AppNotification n) {
     switch (n.type) {
+      case 'connected':
+        break; // обрабатывается в _subscribe до вызова _onNotification
       case 'chat_message':
         _chatMsgController.add(ChatMessageNotification.fromPayload(n.payload));
       case 'new_message':
@@ -230,6 +265,8 @@ class NotificationNotifier extends ChangeNotifier {
 
   Future<void> disconnect() async {
     _token = null;
+    _reconnectAttempt = 0;
+    _connectionState = WsConnectionState.disconnected;
     await _sub?.cancel();
     _wsService.disconnect();
     _pendingRequestCount = 0;

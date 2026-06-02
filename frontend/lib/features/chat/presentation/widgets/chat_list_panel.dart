@@ -497,11 +497,43 @@ class _ChatListPanelState extends State<ChatListPanel> {
 
   // ── Chat list ─────────────────────────────────────────────────────────────────
 
+  Widget _buildSkeletonList() {
+    final colors = AppColors.of(context);
+    final shimmer = colors.surface;
+    return ListView.builder(
+      itemCount: 7,
+      itemBuilder: (context, i) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            _SkeletonBox(width: 48, height: 48, radius: 24, color: shimmer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SkeletonBox(width: 120, height: 13, radius: 4, color: shimmer),
+                  const SizedBox(height: 6),
+                  _SkeletonBox(width: double.infinity, height: 11, radius: 4, color: shimmer),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _SkeletonBox(width: 36, height: 11, radius: 4, color: shimmer),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildChatList() {
     if (_isLoadingChats) {
-      return const Center(
-          child: CircularProgressIndicator(
-              strokeWidth: 2, color: AppTheme.accentIndigo));
+      return _buildSkeletonList();
     }
 
     if (_chats.isEmpty) {
@@ -713,5 +745,61 @@ class _ChatListPanelState extends State<ChatListPanel> {
       return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
     }
     return '${local.day}.${local.month.toString().padLeft(2, '0')}';
+  }
+}
+
+class _SkeletonBox extends StatefulWidget {
+  final double width;
+  final double height;
+  final double radius;
+  final Color color;
+
+  const _SkeletonBox({
+    required this.width,
+    required this.height,
+    required this.radius,
+    required this.color,
+  });
+
+  @override
+  State<_SkeletonBox> createState() => _SkeletonBoxState();
+}
+
+class _SkeletonBoxState extends State<_SkeletonBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (context, child) => Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          color: widget.color.withValues(alpha: _anim.value),
+          borderRadius: BorderRadius.circular(widget.radius),
+        ),
+      ),
+    );
   }
 }

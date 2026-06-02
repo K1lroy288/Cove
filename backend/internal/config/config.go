@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"sync"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -15,10 +16,11 @@ func envOrDefault(key, def string) string {
 }
 
 type Config struct {
-	Port      string
-	JwtSecret string
-	DB        DBConfig
-	MinIO     MinIOConfig
+	Port           string
+	JwtSecret      string
+	AllowedOrigins []string
+	DB             DBConfig
+	MinIO          MinIOConfig
 }
 
 type DBConfig struct {
@@ -53,9 +55,16 @@ func GetConfig() *Config {
 
 func loadConfig() *Config {
 	once.Do(func() {
+		allowedRaw := envOrDefault("ALLOWED_ORIGINS", "http://localhost:*,http://127.0.0.1:*")
+		allowedOrigins := strings.Split(allowedRaw, ",")
+		for i := range allowedOrigins {
+			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+		}
+
 		instance = &Config{
-			Port:      os.Getenv("APP_PORT"),
-			JwtSecret: os.Getenv("JWT_SECRET"),
+			Port:           os.Getenv("APP_PORT"),
+			JwtSecret:      os.Getenv("JWT_SECRET"),
+			AllowedOrigins: allowedOrigins,
 			DB: DBConfig{
 				Host:     os.Getenv("DB_HOST"),
 				User:     os.Getenv("DB_USER"),

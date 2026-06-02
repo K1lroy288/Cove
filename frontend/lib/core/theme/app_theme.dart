@@ -75,6 +75,7 @@ class AppTheme {
   static Config emojiPickerConfig(AppColors colors, {double height = 256}) {
     return Config(
       height: height,
+      emojiTextStyle: DefaultEmojiTextStyle,
       emojiViewConfig: EmojiViewConfig(
         backgroundColor: colors.surface,
         noRecents: Text(

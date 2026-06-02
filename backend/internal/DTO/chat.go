@@ -32,8 +32,8 @@ type CreateGroupRequest struct {
 }
 
 type UpdateGroupRequest struct {
-	Name   *string `json:"name"`
-	Avatar *string `json:"avatar"`
+	Name   *string `json:"name"   binding:"omitempty,min=1,max=100"`
+	Avatar *string `json:"avatar" binding:"omitempty,max=512"`
 }
 
 type AddMembersRequest struct {

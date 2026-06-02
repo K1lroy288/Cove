@@ -4,8 +4,8 @@ import "time"
 
 type User struct {
 	ID        uint    `json:"id"`
-	Username  string  `json:"username"`
-	Password  string  `json:"password"`
+	Username  string  `json:"username" binding:"required,min=3,max=32"`
+	Password  string  `json:"password" binding:"required,min=8,max=72"`
 	AvatarURL *string `json:"avatar_url,omitempty"`
 }
 
@@ -27,12 +27,12 @@ type UserProfileDTO struct {
 }
 
 type UpdateProfileRequest struct {
-	Username  *string `json:"username"`
-	Bio       *string `json:"bio"`
-	AvatarURL *string `json:"avatar_url"`
+	Username  *string `json:"username"   binding:"omitempty,min=3,max=32"`
+	Bio       *string `json:"bio"        binding:"omitempty,max=500"`
+	AvatarURL *string `json:"avatar_url" binding:"omitempty,max=512"`
 }
 
 type ChangePasswordRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
+	CurrentPassword string `json:"current_password" binding:"required,min=1"`
+	NewPassword     string `json:"new_password"     binding:"required,min=8,max=72"`
 }

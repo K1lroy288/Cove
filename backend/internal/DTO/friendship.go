@@ -13,7 +13,7 @@ type FriendRequest struct {
 }
 
 type RespondToRequestDTO struct {
-	Status string `json:"status" binding:"required"`
+	Status string `json:"status" binding:"required,oneof=accepted declined"`
 }
 
 type Friend struct {

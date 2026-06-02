@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart' show AppTheme, AppColors;
 import '../../../auth/presentation/auth_notifier.dart';
+import '../../../user/data/services/user_service.dart';
 import '../../../user/presentation/widgets/user_profile_sheet.dart';
 import '../../data/models/chat.dart';
 import '../../data/models/message.dart';
@@ -45,14 +46,15 @@ Future<Uint8List?> _compressImageFile(String filePath) async {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final longest = decoded.width > decoded.height ? decoded.width : decoded.height;
-    final target = longest > 2048
-        ? img.copyResize(
-            decoded,
-            width: decoded.width >= decoded.height ? 2048 : null,
-            height: decoded.height > decoded.width ? 2048 : null,
-          )
-        : decoded;
-    return Uint8List.fromList(img.encodeJpg(target, quality: 92));
+    // Если фото и так маленькое — не перекодируем, отдаём оригинал (null = use filePath).
+    if (longest <= 2560) return null;
+    final resized = img.copyResize(
+      decoded,
+      width: decoded.width >= decoded.height ? 2560 : null,
+      height: decoded.height > decoded.width ? 2560 : null,
+      interpolation: img.Interpolation.average,
+    );
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 92));
   } catch (_) {
     return null;
   }
@@ -71,6 +73,7 @@ class ChatWindowPanel extends StatefulWidget {
 
 class _ChatWindowPanelState extends State<ChatWindowPanel> {
   final ChatService _api = ChatService();
+  final _userService = UserService();
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -88,6 +91,8 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   Timer? _minuteTimer;
   List<Message> _messages = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   bool _isSending = false;
   int _optimisticCounter = -1;
   bool _showEmojiPicker = false;
@@ -98,6 +103,13 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   Message? _replyingTo;
   Message? _editingMessage;
   PinnedMessage? _localPinnedMessage;
+
+  // Partner presence
+  DateTime? _partnerLastSeen;
+
+  // Multi-select
+  bool _selectionMode = false;
+  final Set<int> _selectedMessageIds = {};
 
   // Typing indicator
   final Map<int, String> _typingUsers = {};
@@ -120,6 +132,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
   void initState() {
     super.initState();
     _localPinnedMessage = widget.chat.pinnedMessage;
+    _scrollController.addListener(_onScroll);
     _loadMessages();
     _subscribeToChat(widget.chat.id);
     _minuteTimer = Timer.periodic(
@@ -174,6 +187,9 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       setState(() {
         _messages = [];
         _isLoading = true;
+        _isLoadingMore = false;
+        _hasMore = true;
+        _partnerLastSeen = null;
         _pendingFilePath = null;
         _pendingFileName = null;
         _pendingFileSize = null;
@@ -363,6 +379,40 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     });
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    if (_isLoadingMore || !_hasMore || _isLoading) return;
+    if (_scrollController.position.pixels <= 200) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_messages.isEmpty) return;
+    final auth = context.read<AuthNotifier>();
+    if (auth.token == null) return;
+    setState(() => _isLoadingMore = true);
+
+    final beforeId = _messages.first.id;
+    final (older, _) = await _api.getMessages(
+      chatId: widget.chat.id,
+      token: auth.token!,
+      before: beforeId,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isLoadingMore = false;
+      if (older.isEmpty || older.length < 50) _hasMore = false;
+      if (older.isNotEmpty) {
+        final existingIds = _messages.map((m) => m.id).toSet();
+        final newOnes = older.where((m) => !existingIds.contains(m.id));
+        _messages = [...newOnes, ..._messages]
+          ..sort((a, b) => a.id.compareTo(b.id));
+      }
+    });
+  }
+
   Future<void> _loadMessages() async {
     final auth = context.read<AuthNotifier>();
     if (auth.token == null) return;
@@ -381,6 +431,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
         _messages = [...msgs, ...extras]
           ..sort((a, b) => a.id.compareTo(b.id));
         _isLoading = false;
+        _hasMore = msgs.length >= 50;
         if (!widget.chat.isGroup) {
           _memberNames = {widget.chat.partnerId: widget.chat.partnerName};
         }
@@ -402,6 +453,15 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
             _memberNames = {for (final m in members) m.userId: m.username};
             _memberAvatars = {for (final m in members) m.userId: m.avatarUrl};
           });
+        }
+      } else {
+        // Загружаем lastSeenAt партнёра для DM
+        final profile = await _userService.getUserProfile(
+          widget.chat.partnerId,
+          auth.token!,
+        );
+        if (mounted && profile != null) {
+          setState(() => _partnerLastSeen = profile.lastSeenAt);
         }
       }
     }
@@ -916,7 +976,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                   token: token,
                 );
               },
-              child: Text(e, style: const TextStyle(fontSize: 30)),
+              child: Text(e, style: DefaultEmojiTextStyle.copyWith(fontSize: 30)),
             )).toList(),
           ),
         );
@@ -1135,7 +1195,97 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     );
   }
 
+  Widget _buildSelectionHeader() {
+    final colors = AppColors.of(context);
+    final count = _selectedMessageIds.length;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: () => setState(() {
+              _selectionMode = false;
+              _selectedMessageIds.clear();
+            }),
+          ),
+          Expanded(
+            child: Text(
+              'Выбрано: $count',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+          ),
+          if (count > 0) ...[
+            IconButton(
+              icon: Icon(Icons.forward_outlined, color: colors.textSecondary),
+              tooltip: 'Переслать',
+              onPressed: () {
+                final msgs = _messages
+                    .where((m) => _selectedMessageIds.contains(m.id))
+                    .toList();
+                setState(() {
+                  _selectionMode = false;
+                  _selectedMessageIds.clear();
+                });
+                if (msgs.isNotEmpty) _showForwardSheet(msgs.first);
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              tooltip: 'Удалить',
+              onPressed: () => _deleteSelectedMessages(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSelectedMessages() async {
+    final ids = List<int>.from(_selectedMessageIds);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: Text('Удалить ${ids.length} сообщ.?'),
+        content: const Text('Сообщения удалятся у всех участников.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Удалить',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedMessageIds.clear();
+    });
+    final token = context.read<AuthNotifier>().token;
+    if (token == null) return;
+    for (final id in ids) {
+      final ok =
+          await _api.deleteMessage(chatId: widget.chat.id, messageId: id, token: token);
+      if (!mounted) break;
+      if (ok) {
+        setState(() {
+          final idx = _messages.indexWhere((m) => m.id == id);
+          if (idx != -1) {
+            _messages[idx] = _messages[idx].copyWith(isDeleted: true, content: '');
+          }
+        });
+      }
+    }
+  }
+
   Widget _buildHeader() {
+    if (_selectionMode) return _buildSelectionHeader();
+
     final chat = widget.chat;
     final colors = AppColors.of(context);
     final isGroup = chat.isGroup;
@@ -1184,6 +1334,11 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
                         const Text(
                           'В сети',
                           style: TextStyle(color: Color(0xFF4CAF50), fontSize: 11),
+                        )
+                      else if (_partnerLastSeen != null)
+                        Text(
+                          _formatLastSeen(_partnerLastSeen!),
+                          style: TextStyle(color: colors.textSecondary, fontSize: 11),
                         ),
                     ],
                   ),
@@ -1306,18 +1461,37 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     final auth = context.read<AuthNotifier>();
     final myId = int.tryParse(auth.userId ?? '') ?? -1;
 
+    // Первый элемент — индикатор загрузки истории (если есть ещё сообщения)
+    final extraItem = _isLoadingMore || _hasMore ? 1 : 0;
+
     return ListView.builder(
       controller: _scrollController,
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: s.uiDensityPadding),
-      itemCount: _messages.length,
+      itemCount: _messages.length + extraItem,
       itemBuilder: (context, index) {
-        final msg = _messages[index];
+        if (index == 0 && extraItem == 1) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: _isLoadingMore
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.accentIndigo),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          );
+        }
+        final msgIndex = index - extraItem;
+        final msg = _messages[msgIndex];
         final isMe = msg.senderId == myId;
-        final showDate = index == 0 ||
-            !_isSameDay(_messages[index - 1].createdAt, msg.createdAt);
+        final showDate = msgIndex == 0 ||
+            !_isSameDay(_messages[msgIndex - 1].createdAt, msg.createdAt);
         final prevSameSender = !showDate &&
-            index > 0 &&
-            _messages[index - 1].senderId == msg.senderId;
+            msgIndex > 0 &&
+            _messages[msgIndex - 1].senderId == msg.senderId;
 
         return Column(
           children: [
@@ -1403,7 +1577,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     } else {
       messageContent = Text(
         msg.content,
-        style: TextStyle(
+        style: DefaultEmojiTextStyle.copyWith(
           fontSize: s.chatFontSizeValue,
           color: isMe ? Colors.white : colors.textPrimary,
         ),
@@ -1482,7 +1656,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
               child: Text(
                 msg.caption!,
-                style: TextStyle(
+                style: DefaultEmojiTextStyle.copyWith(
                   fontSize: s.chatFontSizeValue,
                   color: isMe ? Colors.white : colors.textPrimary,
                 ),
@@ -1532,9 +1706,37 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
       mainAxisSize: MainAxisSize.min,
       children: [
         GestureDetector(
-          onLongPress: () => _showMessageMenu(msg, isMe),
+          onLongPress: () {
+            if (!_selectionMode) {
+              setState(() {
+                _selectionMode = true;
+                _selectedMessageIds.add(msg.id);
+              });
+            } else {
+              _showMessageMenu(msg, isMe);
+            }
+          },
           onSecondaryTap: () => _showMessageMenu(msg, isMe),
-          child: bubble,
+          onTap: _selectionMode
+              ? () => setState(() {
+                    if (_selectedMessageIds.contains(msg.id)) {
+                      _selectedMessageIds.remove(msg.id);
+                      if (_selectedMessageIds.isEmpty) _selectionMode = false;
+                    } else {
+                      _selectedMessageIds.add(msg.id);
+                    }
+                  })
+              : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            decoration: _selectionMode && _selectedMessageIds.contains(msg.id)
+                ? BoxDecoration(
+                    color: AppTheme.accentIndigo.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  )
+                : null,
+            child: bubble,
+          ),
         ),
         if (msg.reactions.isNotEmpty)
           _buildReactionRow(msg, myId, colors),
@@ -1598,10 +1800,28 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
     );
   }
 
+  void _scrollToMessage(int messageId) {
+    // Ищем в загруженных сообщениях
+    final extraItem = (_isLoadingMore || _hasMore) ? 1 : 0;
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx < 0 || !_scrollController.hasClients) return;
+    final itemIdx = idx + extraItem;
+    // Приблизительный offset — точный расчёт через keys сложен, используем itemExtent ~80
+    final approxOffset = (itemIdx * 80.0)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.animateTo(
+      approxOffset,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+    );
+  }
+
   Widget _buildReplyQuote(RepliedMessage reply, bool isMe, AppColors colors) {
     final quoteText = reply.type == 'text' ? reply.content : '[${reply.type}]';
     final senderName = _memberNames[reply.senderId] ?? reply.senderUsername;
-    return Container(
+    return GestureDetector(
+      onTap: () => _scrollToMessage(reply.id),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -1630,7 +1850,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           ),
           Text(
             quoteText,
-            style: TextStyle(
+            style: DefaultEmojiTextStyle.copyWith(
               fontSize: 11,
               color: isMe
                   ? Colors.white.withValues(alpha: 0.75)
@@ -1641,6 +1861,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -1677,7 +1898,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(r.emoji, style: const TextStyle(fontSize: 14)),
+                  Text(r.emoji, style: DefaultEmojiTextStyle.copyWith(fontSize: 14)),
                   if (r.count > 1) ...[
                     const SizedBox(width: 3),
                     Text(
@@ -1713,6 +1934,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               File(msg.content),
               width: double.infinity,
               fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
               errorBuilder: (_, _, _) => const SizedBox(
                 height: 120,
                 child: Center(child: Icon(Icons.broken_image_outlined, size: 40)),
@@ -1722,6 +1944,7 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
               msg.content,
               width: double.infinity,
               fit: BoxFit.cover,
+              filterQuality: FilterQuality.high,
               loadingBuilder: (_, child, progress) => progress == null
                   ? child
                   : const SizedBox(
@@ -2010,6 +2233,16 @@ class _ChatWindowPanelState extends State<ChatWindowPanel> {
 
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _formatLastSeen(DateTime dt) {
+    final diff = DateTime.now().difference(dt.toLocal());
+    if (diff.inMinutes < 1) return 'был(а) только что';
+    if (diff.inMinutes < 60) return 'был(а) ${diff.inMinutes} мин назад';
+    if (diff.inHours < 24) return 'был(а) ${diff.inHours} ч назад';
+    if (diff.inDays < 7) return 'был(а) ${diff.inDays} д назад';
+    final local = dt.toLocal();
+    return 'был(а) ${local.day}.${local.month.toString().padLeft(2, '0')}.${local.year}';
+  }
 
   String _formatTime(DateTime dt, bool use24h) {
     final local = dt.toLocal();
@@ -2344,6 +2577,7 @@ class _FullscreenImagePage extends StatelessWidget {
           backgroundDecoration: const BoxDecoration(color: Colors.black),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 4,
+          filterQuality: FilterQuality.high,
         ),
       );
 }

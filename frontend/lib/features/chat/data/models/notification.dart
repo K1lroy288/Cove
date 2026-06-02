@@ -7,7 +7,7 @@ class AppNotification {
   factory AppNotification.fromJson(Map<String, dynamic> json) {
     return AppNotification(
       type: json['type'] as String,
-      payload: json['payload'] as Map<String, dynamic>,
+      payload: (json['payload'] as Map<String, dynamic>?) ?? {},
     );
   }
 }

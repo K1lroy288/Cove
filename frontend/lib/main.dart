@@ -30,6 +30,9 @@ void main() async {
     }
   });
 
+  // Восстанавливаем сессию до запуска UI — чтобы listener выше сработал
+  await authNotifier.tryRestoreSession();
+
   runApp(
     MultiProvider(
       providers: [
@@ -55,10 +58,24 @@ class MyApp extends StatelessWidget {
       theme: theme == 'light' ? AppTheme.lightTheme : AppTheme.darkTheme,
       home: Consumer<AuthNotifier>(
         builder: (context, auth, _) {
-          return auth.isAuthenticated
-              ? const MainScreen()
-              : const AuthScreen();
+          if (auth.isRestoring) {
+            return const _SplashScreen();
+          }
+          return auth.isAuthenticated ? const MainScreen() : const AuthScreen();
         },
+      ),
+    );
+  }
+}
+
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
       ),
     );
   }

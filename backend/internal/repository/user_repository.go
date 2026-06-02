@@ -25,9 +25,12 @@ func (r *UserRepository) GetUserByUsername(username string) (model.User, error) 
 }
 
 func (r *UserRepository) GetUserById(id uint) (*model.User, error) {
-	var user *model.User
-	err := r.DB.Model(&model.User{ID: id}).Scan(&user).Error
-	return user, err
+	var user model.User
+	err := r.DB.Where("id = ?", id).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *UserRepository) UpdateUser(id uint, username *string, bio *string, avatarURL *string) error {

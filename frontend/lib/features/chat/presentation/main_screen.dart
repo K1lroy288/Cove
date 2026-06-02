@@ -141,6 +141,8 @@ class _MainScreenState extends State<MainScreen> {
     final username = auth.username ?? "User";
 
     final colors = AppColors.of(context);
+    final wsState = context.watch<NotificationNotifier>().connectionState;
+
     return Scaffold(
       body: Column(
         children: [
@@ -164,6 +166,7 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
           if (voice.isInRoom) _buildPersistentCallBar(voice),
+          _buildConnectionBanner(wsState),
         ],
       ),
     );
@@ -419,6 +422,39 @@ class _MainScreenState extends State<MainScreen> {
             ? const VoiceRoomPage()
             : const VoiceRoomListPanel();
       },
+    );
+  }
+
+  Widget _buildConnectionBanner(WsConnectionState state) {
+    if (state == WsConnectionState.connected) return const SizedBox.shrink();
+    final isConnecting = state == WsConnectionState.connecting;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      height: state == WsConnectionState.connected ? 0 : 28,
+      color: isConnecting
+          ? Colors.orange.withValues(alpha: 0.85)
+          : Colors.red.withValues(alpha: 0.85),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (isConnecting) ...[
+            const SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(
+                  strokeWidth: 1.5, color: Colors.white),
+            ),
+            const SizedBox(width: 8),
+          ] else
+            const Icon(Icons.wifi_off, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            isConnecting ? 'Подключение...' : 'Нет соединения',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
     );
   }
 

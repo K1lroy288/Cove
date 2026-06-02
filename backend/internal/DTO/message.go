@@ -6,14 +6,14 @@ import (
 )
 
 type SendMessageRequest struct {
-	Content               string  `json:"content" binding:"required"`
-	Type                  string  `json:"type"`
-	FileName              *string `json:"file_name"`
+	Content               string  `json:"content"                binding:"required,max=10000"`
+	Type                  string  `json:"type"                   binding:"omitempty,oneof=text image video audio file"`
+	FileName              *string `json:"file_name"              binding:"omitempty,max=255"`
 	FileSize              *int64  `json:"file_size"`
-	Caption               *string `json:"caption"`
+	Caption               *string `json:"caption"                binding:"omitempty,max=5000"`
 	ReplyToID             *uint   `json:"reply_to_id"`
 	ForwardedFromID       *uint   `json:"forwarded_from_id"`
-	ForwardedFromUsername *string `json:"forwarded_from_username"`
+	ForwardedFromUsername *string `json:"forwarded_from_username" binding:"omitempty,max=32"`
 }
 
 // RepliedMessageDTO — краткая инфо о сообщении, на которое отвечают.
@@ -52,7 +52,7 @@ type MessageDTO struct {
 
 // EditMessageRequest — тело PATCH /chat/:id/messages/:msg_id.
 type EditMessageRequest struct {
-	Content string `json:"content" binding:"required,min=1"`
+	Content string `json:"content" binding:"required,min=1,max=10000"`
 }
 
 // PinMessageRequest — тело PATCH /chat/:id/pin.
